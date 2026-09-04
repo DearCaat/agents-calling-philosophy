@@ -1,0 +1,9 @@
+# model_glob	effort	context_tokens	autocompact
+# First match wins. Empty effort/context means harness default.
+gpt-5.6-luna	max	-	-
+gpt-5.6-terra	high	-	-
+gpt-5.6-sol	medium	-	-
+grok-4.5	high	200000	200k
+grok-*	high	350000	350k
+*flash*	high	272000	272k
+gemini-*	high	272000	272k

@@ -1,0 +1,2 @@
+# Canonical executable binding registry.  Tab-separated; comments are ignored.
+# api_id	harness_id	model_id	state	selector	codex_catalog	wrapper

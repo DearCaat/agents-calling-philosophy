@@ -1,0 +1,2 @@
+# Most recent failed or inconclusive exact probes. Tab-separated; '-' means unobserved.
+# api_id	harness_id	model_id	recorded_at	request_model	assistant_event_model	result_model_usage	entrypoint	profile	effort	sandbox	exit_status	session_or_thread	outcome

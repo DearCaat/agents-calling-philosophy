@@ -1,0 +1,17 @@
+{
+  "name": "agents",
+  "version": "0.1.0",
+  "description": "Portable calling philosophy for API + harness + model combinations; machine inventory is local overlay.",
+  "author": {
+    "name": "twh"
+  },
+  "keywords": [
+    "agents",
+    "models",
+    "harnesses",
+    "calling-philosophy"
+  ],
+  "skills": [
+    "./skills/executing-model-combinations"
+  ]
+}

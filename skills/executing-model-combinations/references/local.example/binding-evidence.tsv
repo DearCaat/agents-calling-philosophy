@@ -1,0 +1,2 @@
+# Per-binding successful execution evidence. Tab-separated; '-' means unavailable, never inferred.
+# api_id	harness_id	model_id	verified_at	request_model	cli_observed_model	direct_probe_observed_model	direct_probe_evidence	catalog_context	api_max_output	route_capacity	effective_modalities_tools	profile	effort	entrypoint	sandbox	exit_status	session_or_thread	notes

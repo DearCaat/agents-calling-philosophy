@@ -1,0 +1,14 @@
+{
+  "name": "agents-calling-philosophy",
+  "owner": {
+    "name": "twh"
+  },
+  "description": "Portable agent calling philosophy plugin (no machine credentials).",
+  "plugins": [
+    {
+      "name": "agents",
+      "source": "./",
+      "description": "Select and execute registered API + harness + model combinations using portable philosophy + local inventory."
+    }
+  ]
+}

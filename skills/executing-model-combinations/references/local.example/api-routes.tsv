@@ -1,0 +1,2 @@
+# Read-only model-discovery routes. Tab-separated; '-' means no safe generic route is configured.
+# api_id	base_url	wire_protocol	credential_ref	models_path	auth_scheme	state	notes

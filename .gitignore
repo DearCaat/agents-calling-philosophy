@@ -1,0 +1,5 @@
+.env
+private/
+**/credentials.env
+**/*.pem
+.DS_Store
