@@ -68,8 +68,7 @@ description: 给派工 agent 用：当前 harness 默认派同 harness 的 nativ
 
 - 缺口交还是报告，不是补「接近的」组合。晋级只用 `scripts/verify.sh`（探针规范化后须为 `PING`）。
 - OpenRouter / `/models` 只发现候选，不产生 binding。
-- 凭据在插件 `private/credentials.env`；值不进 prompt/文档/回显。
-- 本机 inventory 根：`AGENTS_LOCAL_ROOT` 或默认 `references/local/`。
+- 本机数据根：优先 `$AGENTS_DATA_ROOT`（`local/` + `private/`，三家 harness 共用）；否则 `CLAUDE_PLUGIN_DATA` / `PLUGIN_DATA` / `GROK_PLUGIN_DATA`；再否则插件树内 `references/local` + `private/`。细覆盖见 `AGENTS_LOCAL_ROOT` / `AGENTS_CREDENTIALS_FILE`。凭据值不进 prompt/文档/回显。
 
 ## 交还格式
 
