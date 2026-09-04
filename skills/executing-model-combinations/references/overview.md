@@ -8,14 +8,27 @@
 - [harnesses.md](harnesses.md)：原生命令形状、session、压缩语义、spawn_agent 规格——**无**本机 URL/HOME。
 - 资料类型标签：`official` / `local-test` / `local-experience`（证据种类，不是目录名）。
 
-## Local overlay（本机）
+## Machine data（本机，更新不覆盖）
 
-- 根目录：[local/](local/)（默认）或环境变量 `AGENTS_LOCAL_ROOT`。
-- 模板：[local.example/](local.example/)——只有表头，不可当 registry。
-- 内含：`bindings.tsv`、`adapters.tsv`、`api-routes.tsv`、evidence/failures、`apis.md`、`harnesses.md`。说明见 [local/README.md](local/README.md)。
-- 凭据与 Codex catalog 仍在插件根 `private/`（可用 `AGENTS_CODEX_CATALOG_DIR`）。
+推荐**一个共享目录**挂本机 inventory + 凭据，Claude Code / Codex / Grok 都解析到这里：
 
-机器 B：替换 `local/` + `private/`，portable 文件不动。
+```text
+$AGENTS_DATA_ROOT/
+  local/                 # bindings、adapters、apis、evidence…
+  private/
+    credentials.env
+    runtime/…            # 可选：codex-home 等
+```
+
+解析顺序（`scripts/lib/data-root.sh`）：
+
+1. `AGENTS_DATA_ROOT`（推荐显式设置，三家共用）
+2. 否则 `CLAUDE_PLUGIN_DATA` / `PLUGIN_DATA` / `GROK_PLUGIN_DATA`（harness 注入的插件持久目录）
+3. 否则回退插件树内 `references/local` + `private/`（目录版 marketplace 兼容）
+
+细覆盖：`AGENTS_LOCAL_ROOT`、`AGENTS_CREDENTIALS_FILE`、`AGENTS_CODEX_CATALOG_DIR`。
+
+空模板：[local.example/](local.example/)。若仍使用插件内 overlay，见 [local/README.md](local/README.md)（本机工作树可有；公开哲学仓不含填好的 `local/`）。
 
 ## 不变量
 
@@ -28,9 +41,10 @@
 ## 脚本
 
 ```bash
-SKILL_DIR=/path/to/agents/skills/executing-model-combinations
+export AGENTS_DATA_ROOT=$HOME/.agents/calling-data
+SKILL_DIR=/path/to/plugin/skills/executing-model-combinations
 "$SKILL_DIR/scripts/dispatch.sh" --list-bindings
 "$SKILL_DIR/scripts/api-models.sh" --api <id-from-local-routes>
 ```
 
-`dispatch.sh` / `verify.sh` / `api-models.sh` 均读 `LOCAL_ROOT`；缺 inventory 时失败并提示从 `local.example` 复制，不回退到某一台机器的 URL。
+缺 inventory 时失败并提示挂载 / 从 `local.example` 复制，不回退到某一台机器的 URL。

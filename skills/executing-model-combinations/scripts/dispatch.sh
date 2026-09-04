@@ -8,10 +8,9 @@ set -Eeuo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 SKILL_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd -P)
 PLUGIN_ROOT=$(cd -- "$SKILL_DIR/../.." && pwd -P)
-LOCAL_ROOT=${AGENTS_LOCAL_ROOT:-$SKILL_DIR/references/local}
-CODEX_CATALOG_DIR=${AGENTS_CODEX_CATALOG_DIR:-$PLUGIN_ROOT/private/runtime/codex-home}
-DSH_RUNTIME_HOME="$PLUGIN_ROOT/private/runtime/dsh-home"
-GROK_RUNTIME_HOME="$PLUGIN_ROOT/private/runtime/grok-home/.grok"
+# shellcheck source=lib/data-root.sh
+source "$SCRIPT_DIR/lib/data-root.sh"
+agents_apply_data_root
 BINDINGS_FILE="$LOCAL_ROOT/bindings.tsv"
 ADAPTERS_FILE="$LOCAL_ROOT/adapters.tsv"
 DEFAULTS_FILE="$SKILL_DIR/references/runtime-defaults.tsv"
@@ -77,7 +76,7 @@ is_uint() {
 
 validate_binding_registry() {
   [[ -d $LOCAL_ROOT ]] || \
-    die "local inventory missing: $LOCAL_ROOT (copy references/local.example → references/local or set AGENTS_LOCAL_ROOT)"
+    die "local inventory missing: $LOCAL_ROOT (mount \$AGENTS_DATA_ROOT/local, or copy references/local.example → local, or set AGENTS_LOCAL_ROOT)"
   [[ -r $BINDINGS_FILE ]] || die "binding registry is not readable: $BINDINGS_FILE"
   awk -F '\t' '
     /^#/ || NF == 0 { next }
@@ -375,8 +374,7 @@ fi
 emit_state_override 2
 
 set +x
-CREDENTIALS_FILE="$PLUGIN_ROOT/private/credentials.env"
-[[ -r $CREDENTIALS_FILE ]] || die "credentials file is not readable: $CREDENTIALS_FILE"
+[[ -r $CREDENTIALS_FILE ]] || die "credentials file is not readable: $CREDENTIALS_FILE (mount \$AGENTS_DATA_ROOT/private/credentials.env)"
 set -a
 # shellcheck source=/dev/null
 source "$CREDENTIALS_FILE"

@@ -8,7 +8,9 @@ set -Eeuo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 SKILL_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd -P)
 PLUGIN_ROOT=$(cd -- "$SKILL_DIR/../.." && pwd -P)
-LOCAL_ROOT=${AGENTS_LOCAL_ROOT:-$SKILL_DIR/references/local}
+# shellcheck source=lib/data-root.sh
+source "$SCRIPT_DIR/lib/data-root.sh"
+agents_apply_data_root
 ROUTES_FILE="$LOCAL_ROOT/api-routes.tsv"
 
 API=
@@ -88,8 +90,7 @@ IFS=$'\t' read -r RESOLVED_API BASE_URL WIRE_PROTOCOL CREDENTIAL_REF MODELS_PATH
 [[ $CREDENTIAL_REF =~ ^[A-Z][A-Z0-9_]*$ ]] || die 'invalid credential reference in route registry'
 
 set +x
-CREDENTIALS_FILE="$PLUGIN_ROOT/private/credentials.env"
-[[ -r $CREDENTIALS_FILE ]] || die "credentials file is not readable: $CREDENTIALS_FILE"
+[[ -r $CREDENTIALS_FILE ]] || die "credentials file is not readable: $CREDENTIALS_FILE (mount \$AGENTS_DATA_ROOT/private/credentials.env)"
 set -a
 # shellcheck source=/dev/null
 source "$CREDENTIALS_FILE"

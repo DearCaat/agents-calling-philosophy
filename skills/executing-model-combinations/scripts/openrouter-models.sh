@@ -7,6 +7,9 @@ set -Eeuo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 SKILL_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd -P)
 PLUGIN_ROOT=$(cd -- "$SKILL_DIR/../.." && pwd -P)
+# shellcheck source=lib/data-root.sh
+source "$SCRIPT_DIR/lib/data-root.sh"
+agents_apply_data_root
 BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
 
 MODE=${1:-}
@@ -78,7 +81,6 @@ command -v curl >/dev/null 2>&1 || die 'curl is required'
 command -v jq >/dev/null 2>&1 || die 'jq is required'
 
 set +x
-CREDENTIALS_FILE="$PLUGIN_ROOT/private/credentials.env"
 if [[ -r $CREDENTIALS_FILE ]]; then
   set -a
   # shellcheck source=/dev/null

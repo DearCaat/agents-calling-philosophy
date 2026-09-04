@@ -8,7 +8,10 @@ set -Eeuo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 SKILL_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd -P)
-LOCAL_ROOT=${AGENTS_LOCAL_ROOT:-$SKILL_DIR/references/local}
+PLUGIN_ROOT=$(cd -- "$SKILL_DIR/../.." && pwd -P)
+# shellcheck source=lib/data-root.sh
+source "$SCRIPT_DIR/lib/data-root.sh"
+agents_apply_data_root
 DISPATCH="$SCRIPT_DIR/dispatch.sh"
 BINDINGS_FILE="$LOCAL_ROOT/bindings.tsv"
 EVIDENCE_FILE="$LOCAL_ROOT/binding-evidence.tsv"
