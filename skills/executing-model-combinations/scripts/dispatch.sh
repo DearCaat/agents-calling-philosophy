@@ -128,24 +128,13 @@ maybe_source_nvm() {
   fi
 }
 
-# cc sub-agents resolve sonnet/opus/haiku/fable. Pin those aliases to grok
-# family slugs for grok workers; otherwise pin all four to the requested model
-# so a gemini (etc.) worker does not silently fall onto grok or claude-sonnet-4-6.
+# Pin every Claude Code alias to the requested non-Grok model so a cc worker
+# cannot silently fall onto a Grok or Anthropic model.
 set_claude_default_models() {
-  case $RESOLVED_MODEL in
-    grok-4.5|grok-4.6)
-      CLAUDE_DEFAULT_OPUS=grok-4.6
-      CLAUDE_DEFAULT_SONNET=grok-4.5
-      CLAUDE_DEFAULT_HAIKU=grok-4.5
-      CLAUDE_DEFAULT_FABLE=grok-4.6
-      ;;
-    *)
-      CLAUDE_DEFAULT_OPUS=$RESOLVED_MODEL
-      CLAUDE_DEFAULT_SONNET=$RESOLVED_MODEL
-      CLAUDE_DEFAULT_HAIKU=$RESOLVED_MODEL
-      CLAUDE_DEFAULT_FABLE=$RESOLVED_MODEL
-      ;;
-  esac
+  CLAUDE_DEFAULT_OPUS=$RESOLVED_MODEL
+  CLAUDE_DEFAULT_SONNET=$RESOLVED_MODEL
+  CLAUDE_DEFAULT_HAIKU=$RESOLVED_MODEL
+  CLAUDE_DEFAULT_FABLE=$RESOLVED_MODEL
 }
 
 # Runtime defaults from portable references/runtime-defaults.tsv (first glob match).
@@ -231,6 +220,8 @@ fi
 
 [[ -n $API && -n $HARNESS && -n $MODEL ]] || \
   die 'provide all of --api --harness --model'
+[[ $HARNESS != claude-old || $MODEL != grok-* ]] || \
+  die 'Grok must use harness=grok-build; claude-old Grok bindings are forbidden'
 mapfile -t MATCHES < <(binding_data | awk -F '\t' \
   -v api="$API" -v harness="$HARNESS" -v model="$MODEL" \
   '$1 == api && $2 == harness && $3 == model')

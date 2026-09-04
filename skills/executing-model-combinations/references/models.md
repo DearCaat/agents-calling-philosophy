@@ -11,19 +11,18 @@
 
 ## 本机调用口径（local-experience）
 
-以下是文浩的使用经验，**不是** binding，也不能把未 `verified` 的推荐当成已执行。派工步骤在 [SKILL.md](../SKILL.md)，角色排序只以本节为准。API、harness、model 三轴分开：同一模型可走不同 API+harness；「Grok 常用 cc」不是一个合成 id。
+以下是文浩的使用经验，**不是** binding，也不能把未 `verified` 的推荐当成已执行。派工步骤在 [SKILL.md](../SKILL.md)，角色排序只以本节为准。API、harness、model 三轴分开：同一模型可走不同 API+harness；Grok 的入口固定为 grok-build。
 
 协议与通道实参见本机 [local/apis.md](local/apis.md) / [local/harnesses.md](local/harnesses.md)。下面是**调用哲学**（跨机器仍用；本机有无 binding 另查 registry）：
 
 - 官方 Anthropic Claude 默认不派。Worker 可复用：能 resume 就 resume；连续失败换新 worker。`dispatch.sh` 只是一次性包装。
-- **当前 harness 用当前 harness**：cc+grok → cc+grok sub-agent；Codex+GPT → Codex `spawn_agent`。内部循环仍用 sub-agent。
-- 裸 HTTP 字面 `sonnet`/`opus` 在多数 Anthropic 兼容网关上不是 grok；cc 侧用 `ANTHROPIC_DEFAULT_*` 钉 slug，避免落到真实 `claude-sonnet-4-6`。
+- **当前 harness 用当前 harness**：Codex+GPT → Codex `spawn_agent`；Grok 是例外，一律走 grok-build。内部循环仍用 sub-agent。
 - `grok-4.3` 不是可派模型。
 
 角色（`local-experience` / 哲学）：
 
 - **杂事**：luna-max（Codex）首选；其次 ds-flash / glm-flash。Grok 与 gemini 不当杂事默认。杂事 agent 可写代码；不自主改 skill/模型卡/对外叙述。
-- **确定任务执行器**：Grok + `claude-old`，`--model grok-4.5`（4.6 更贵更强）。禁止无故改口 grok-build。
+- **确定任务执行器**：Grok Build；具体 model 与 API 只从本机 registry 的 verified binding 解析。`claude-old` 不承载 Grok。
 - **GPT** 默认 Codex；**DS** 默认 Codex；**Kimi** 以本机 registry 已 verified 的 Codex 行为准。
 - **审查**：terra / sol（Codex）；关键用 sol。视觉：luna → terra。
 - **知识性任务**：`gemini-3.8-flash-high` + `claude-old`。不当杂事，不替代 Grok 执行器。
@@ -42,10 +41,8 @@
 默认有效 context（**调用哲学**；窗口与 autocompact 绑死，不是 binding）。规范源：[runtime-defaults.tsv](runtime-defaults.tsv)，`dispatch.sh` 读取同一张表：
 
 - Codex GPT（luna / terra / sol）：catalog 维持 `272000`（官方 1.05M 本机 Codex 不兑现）。
-- grok-4.5 + `claude-old`：**严格** `CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000`，`--autocompact 200k`（与窗口绑死）。
-- grok-4.6 + `claude-old`：`350000` / `--autocompact 350k`（官方 500k，本机折中；未另指定）。
 - flash / 杂事（ds-flash、glm-flash、`gemini-3.8-flash-high`，以及 Codex flash catalog）：有效窗口 `272000`；cc 侧 `--autocompact 272k` + 同值 `CLAUDE_CODE_MAX_CONTEXT_TOKENS`。
-- `dispatch.sh` 对 cc 套上述值；Codex 靠 catalog 的 `context_window` / `max_context_window`。native sub-agent 必须自己带同等窗口。
+- `dispatch.sh` 只为 cc 的非 Grok 路径套上述窗口；Codex 靠 catalog 的 `context_window` / `max_context_window`。Grok Build 使用其原生上下文管理。
 
 ## GPT-5.6：Luna / Terra / Sol
 
@@ -85,7 +82,7 @@
 - 公开能力：xAI 当前将 Grok-4.6 定位为代码和一般文本任务的首选，并称其为最智能、最快的 Grok；这只是 `official` 厂商定位，不是本机 benchmark。两者官方 context 均为 500K。
 - 模型官方参考成本：在 prompt 少于 200K tokens 时，Grok-4.5 为 input/cache/output `$2.00` / `$0.30` / `$6.00`，Grok-4.6 为 `$2.00` / `$0.50` / `$6.00`；达到 200K 后两者 input/output 都为 `$4.00` / `$12.00`，cache 分别为 `$0.60` / `$1.00`（`official`，[xAI Models](https://docs.x.ai/developers/models.md)）。
 - 本机限制：`openai-local-8317` 上 Codex / grok-build 走 Responses，Claude Code 走同一 API 的 Messages 口、真 grok slug。`grok-build-managed` 的 `grok-4.5` 已验证请求曾 observed 为 `grok-4.6-build`；`grok-direct-api` 的 `grok-4.5` 于 2026-09-03 observed `grok-4.5-build`。通道实际账单未知，不能以 xAI 官方价反推（`local-test/configured`，见 [apis.md](local/apis.md)）。
-- 本机经验（`local-experience`）：有确定任务时 Grok 是首选执行器，harness 为 `claude-old`，请求 model=`grok-4.5`/`grok-4.6`（2026-09-03 cc CLI PING）。消费 agent 看到「grok-4.5+cc」走这一行，禁止改口 grok-build。Grok 不当杂事默认（成本高于 luna）。`grok-4.3` 不是可派模型。
+- 本机经验（`local-experience`）：有确定任务时 Grok 是首选执行器，harness 为 `grok-build`。具体 model 与通道由本机 registry 的 verified binding 决定。Grok 不当杂事默认（成本高于 luna）。`grok-4.3` 不是可派模型；`claude-old` 不承载 Grok。
 
 ## Gemini 3.8 Flash
 
@@ -97,7 +94,7 @@
 
 ## Claude aliases
 
-- 本机 `claude-old` 仍可能在 UI 里显示 `opus`/`sonnet`/`haiku`/`fable`。插件通道把它们映射到 grok slug（`ANTHROPIC_DEFAULT_SONNET_MODEL=grok-4.5` 等），`--model` 发真 slug。它们不是 Anthropic 官方模型身份。
+- 本机 `claude-old` 仍可能在 UI 里显示 `opus`/`sonnet`/`haiku`/`fable`。dispatcher 将这些 alias 全部钉到当前已登记的非 Grok 模型；它们不是模型身份，也不能作为 Grok 的入口。
 - 8317 目录含 `claude-sonnet-4-6` 等 slug；它们不是本 bundle 的 binding。2026-08-28 经旧 15721 通道的 `claude-sonnet-4-6` probe 身份冲突，见 [binding-failures.tsv](local/binding-failures.tsv)（历史记录，不是当前 registry）。
 - 不写 Anthropic 官方参考成本。默认不派官方 Claude。Claude Code 的压缩优势写在 [harnesses.md](harnesses.md)。Kimi 可派的是 Codex + pjlab，不是 cc。
 

@@ -63,7 +63,7 @@ codex exec -p luna-max \
 
 模型可用 `-m/--model`，effort 用 `-c model_reasoning_effort=...`，profile 用 `-p`。`--json` 输出 JSONL，`-o` 单独写最终消息，`--output-schema` 约束最终输出。sandbox 为 `read-only|workspace-write|danger-full-access`；`--approve-for-me` 与危险 bypass 参数只能按任务权限显式使用。
 
-2026-09-03 实测（grok-4.5 via cc）：`codex exec -s workspace-write` **连不上** `127.0.0.1` 上的本机 listener（curl exit 7 / connection refused 外观）；同一探针 `-s danger-full-access` 立即 OPEN。cc 进程本身始终能通 loopback。因此 luna-max 在 workspace-write 下测本机网关会误报挂了——那是 Codex sandbox 隔了 loopback。探本机 listener 不要用 workspace-write。
+2026-09-03 实测：`codex exec -s workspace-write` **连不上** `127.0.0.1` 上的本机 listener（curl exit 7 / connection refused 外观）；同一探针 `-s danger-full-access` 立即 OPEN。非 Codex-sandbox 的本机进程能通 loopback。因此 luna-max 在 workspace-write 下测本机网关会误报挂了——那是 Codex sandbox 隔了 loopback。探本机 listener 不要用 workspace-write。
 
 Profiles 是 `~/.codex/<name>.config.toml`，以符号链接指向 bundle 内的 profile 文件。
 

@@ -1,6 +1,6 @@
 ---
 name: executing-model-combinations
-description: 给派工 agent 用：当前 harness 默认派同 harness 的 native sub-agent；用户点名组合按口语表还原为 harness+model（grok+cc 不要改成 grok-build）；只给任务则按选择程序自主执行；本机入口以 references/local/bindings.tsv 为准。只讨论厂商通用知识且不涉及本机资源时不使用。
+description: 给派工 agent 用：当前 harness 默认派同 harness 的 native sub-agent；Grok 一律走 grok-build，禁止 grok+cc；只给任务则按选择程序自主执行；本机入口以 references/local/bindings.tsv 为准。只讨论厂商通用知识且不涉及本机资源时不使用。
 ---
 
 # 执行模型组合
@@ -29,23 +29,24 @@ description: 给派工 agent 用：当前 harness 默认派同 harness 的 nativ
 
 | 当前 main | 默认 worker | 入口 |
 |---|---|---|
-| cc + grok（`claude-old`） | 仍是 cc + grok | Claude Code 子 agent；`--model grok-4.5` / `grok-4.6` |
+| cc + Gemini（`claude-old`） | 仍是 cc + Gemini | Claude Code 子 agent |
 | Codex + GPT | 仍是 Codex + GPT | native `spawn_agent`（`codex-subagent`，`wrapper=no`） |
 | Grok CLI | 仍是 grok-build | grok 自己的 subagent |
 
-只有这些才跨 harness：用户点名另一套；当前 harness 放不下该模型；角色要求换组合（杂事→luna-max，审查→terra/sol）；`parallel.sh` fan-out。
+Grok 是当前 harness 原则的例外：无论主 harness，Grok 都走 grok-build。其它跨 harness 情形是用户点名另一套、当前 harness 放不下该模型、角色要求换组合（杂事→luna-max，审查→terra/sol）或 `parallel.sh` fan-out。
 
 ### 口语 → harness + model
 
 | 用户说 | harness | model | 入口哲学 |
 |---|---|---|---|
-| grok-4.5 + cc | `claude-old` | `grok-4.5` | 已在 cc：子 agent。禁止改口 grok-build |
-| grok-4.6 + cc | `claude-old` | `grok-4.6` | 同上 |
+| grok / grok-4.5 | `grok-build` | `grok-4.5` | 从本机 registry 选已验证 binding |
+| grok-4.6 | `grok-build` | `grok-4.6` | 仅在本机 registry 为 verified 时执行 |
+| grok + cc | — | — | 不可用；改用 grok-build，不得派 `claude-old` |
 | gemini / gemini-3.8-flash | `claude-old` | `gemini-3.8-flash-high` | 知识性 flash；不当杂事。本机若仍 `configured`：先 `verify.sh` |
 | luna-max / 杂事 | `codex-cli` | `gpt-5.6-luna` | 已在 Codex：优先 `spawn_agent`；否则 `codex exec` |
 | GPT terra / sol | `codex-cli` | `gpt-5.6-terra` / `gpt-5.6-sol` | Codex |
 | DS flash | `codex-cli` | `deepseek-v4-flash-0731` | api 由本机 registry 决定 |
-| grok CLI / grok-build | `grok-build` | `grok-4.5` | 仅点名或已在 Grok CLI |
+| grok CLI / grok-build | `grok-build` | `grok-4.5` | 与默认 Grok 路径相同 |
 
 官方 Anthropic Claude 默认不派。具体 BASE_URL / binary 见本机 `local/`。
 
@@ -56,8 +57,8 @@ description: 给派工 agent 用：当前 harness 默认派同 harness 的 nativ
 用户只给任务时：
 
 1. **划可派面。** 已在目标 harness 内则含 native。跨 harness 才要 `wrapper=yes`。官方 Claude、默认不派的 `openai-direct` 不进默认候选。
-2. **硬约束筛。** resume/fork → 复用 worker。点名 cc/grok 执行 → `claude-old`+grok；gemini → 同 harness；GPT → `codex-cli`。
-3. **排序**（见 models.md）：杂事 → luna-max，其次 ds/glm-flash；执行器 → grok-4.5+cc；知识 → gemini+cc；审查 → terra/sol。Grok/gemini 不当杂事默认。多条 verified 时 evidence 优先。
+2. **硬约束筛。** resume/fork → 复用 worker。Grok → `grok-build`（`grok+cc` 不可用）；gemini → `claude-old`；GPT → `codex-cli`。
+3. **排序**（见 models.md）：杂事 → luna-max，其次 ds/glm-flash；执行器 → `grok-build` + 已验证 Grok；知识 → gemini+cc；审查 → terra/sol。Grok/gemini 不当杂事默认。多条 verified 时 evidence 优先。
 4. **报出所选** 后再调用，并带 effort/context（未指定则用 `runtime-defaults.tsv`）。
 
 ## 派多个组合
