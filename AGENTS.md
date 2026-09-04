@@ -1,12 +1,9 @@
-# agents bundle
+# agents-calling-philosophy
 
-跨 harness 的 **调用哲学 + 本机 inventory** 插件。处理组合选择或实际模型调用时，先读：
+跨 harness 的 **调用哲学** 插件（本仓库不含本机 credentials / 填好的 inventory）。处理组合选择或实际模型调用时，先读：
 
 - `skills/executing-model-combinations/SKILL.md`
 
-哲学（角色、推荐模型名、effort/context 政策、native sub-agent）在 skill 的 portable `references/`。  
-本机通道与 registry 在 `skills/executing-model-combinations/references/local/`（可整夹替换；见该目录 README）。
+哲学（角色、推荐模型名、effort/context 政策、native sub-agent、缺口不改口）在 skill 的 portable `references/` 与 `runtime-defaults.tsv`。
 
-Codex、Claude Code 与 Grok 经各自插件入口加载同一 skill。凭据值只在 `private/`，由脚本或原生命令注入；不得写入 prompt、回显、文档或日志。
-
-本机已知偏差（inventory，非哲学）：`~/.codex/config.toml` / `~/.grok/config.toml` 可能含明文 token（不由本插件管理）；cc-switch 可能改写 `~/.claude_old_env`、`~/.codex`、`~/.grok`。
+本机通道与 registry 由各机自备：从 `references/local.example/` 复制为 `references/local/`（或设 `AGENTS_LOCAL_ROOT`），凭据放在插件 `private/`。凭据值不得写入 prompt、回显、文档或日志。
