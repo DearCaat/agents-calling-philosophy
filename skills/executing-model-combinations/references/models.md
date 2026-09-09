@@ -25,7 +25,7 @@
 - **确定任务执行器**：Grok Build；具体 model 与 API 只从本机 registry 的 verified binding 解析。`claude-old` 不承载 Grok。
 - **GPT** 默认 Codex；**DS** 默认 Codex；**Kimi** 以本机 registry 已 verified 的 Codex 行为准。
 - **审查**：terra / sol（Codex）；关键用 sol。视觉：luna → terra。
-- **知识性任务**：`gemini-3.8-flash-high` + `claude-old`。不当杂事，不替代 Grok 执行器。
+- **知识性任务**：Gemini 的本机 registry exact `verified` binding。Gemini 不预设 harness；不当杂事，不替代 Grok 执行器。
 - Codex `workspace-write` 不能用来判断本机 loopback 是否存活（见 local harnesses）。
 
 默认 effort（运行参数，不是 binding；用户显式指定则用指定值）。`dispatch.sh` 未传 `--effort` 时套同一组；native sub-agent 必须自己带：
@@ -90,7 +90,7 @@
 - 公开能力：官方 context 1,048,576、最大输出 65,536；thinking 档 low/medium/high（默认 medium）；输入 text/image/video/audio/PDF，输出 text（`official`，同上）。本机 cc 通道是否打开多模态未压测。
 - 模型官方参考成本：Gemini API 标价至 2026-12-31 为 input `$0.75` / output `$3.75`（含 thinking tokens）/ 1M；2027-01-01 起翻倍（`official`，[Gemini API Pricing](https://ai.google.dev/gemini-api/docs/pricing)）。**不是** 8317 通道账单。
 - 本机限制：8317 `/models` 有 `gemini-3.8-flash-high`，无无后缀的 `gemini-3.8-flash`。2026-09-03 裸 HTTP `/v1/messages` 200，observed `gemini-3.8-flash`，文本 PING。同日 cc `verify.sh`：120s 超时（exit 124，unrecognized_model / 未知窗口），加长后 exit 1 为上游 429 `RESOURCE_EXHAUSTED`。registry 仍为 `configured`。请求 slug 与 observed `gemini-3.8-flash` 必须分列。
-- 本机经验（`local-experience`）：知识性 flash，世界知识与专业知识好于其它 flash，成本同档。默认 harness 是 `claude-old`（8317）。不当杂事，也不替代 Grok 当确定任务执行器。
+- 本机经验（`local-experience`）：知识性 flash，世界知识与专业知识好于其它 flash，成本同档。harness 只由本机 registry 的 exact `verified` binding 决定；不当杂事，也不替代 Grok 当确定任务执行器。
 
 ## Claude aliases
 

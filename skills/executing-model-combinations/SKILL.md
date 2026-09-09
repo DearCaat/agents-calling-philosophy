@@ -29,7 +29,7 @@ description: 给派工 agent 用：当前 harness 默认派同 harness 的 nativ
 
 | 当前 main | 默认 worker | 入口 |
 |---|---|---|
-| cc + Gemini（`claude-old`） | 仍是 cc + Gemini | Claude Code 子 agent |
+| cc + 已验证的 `claude-old` binding | 仍是同一 `claude-old` binding | Claude Code 子 agent |
 | Codex + GPT | 仍是 Codex + GPT | native `spawn_agent`（`codex-subagent`，`wrapper=no`） |
 | Grok CLI | 仍是 grok-build | grok 自己的 subagent |
 
@@ -42,7 +42,7 @@ Grok 是当前 harness 原则的例外：无论主 harness，Grok 都走 grok-bu
 | grok / grok-4.5 | `grok-build` | `grok-4.5` | 从本机 registry 选已验证 binding |
 | grok-4.6 | `grok-build` | `grok-4.6` | 仅在本机 registry 为 verified 时执行 |
 | grok + cc | — | — | 不可用；改用 grok-build，不得派 `claude-old` |
-| gemini / gemini-3.8-flash | `claude-old` | `gemini-3.8-flash-high` | 知识性 flash；不当杂事。本机若仍 `configured`：先 `verify.sh` |
+| gemini / gemini-3.8-flash | 本机 registry 的 exact `verified` binding | binding 的 model ID | 知识性 flash；不预设 harness，不当杂事 |
 | luna-max / 杂事 | `codex-cli` | `gpt-5.6-luna` | 已在 Codex：优先 `spawn_agent`；否则 `codex exec` |
 | GPT terra / sol | `codex-cli` | `gpt-5.6-terra` / `gpt-5.6-sol` | Codex |
 | DS flash | `codex-cli` | `deepseek-v4-flash-0731` | api 由本机 registry 决定 |
@@ -57,8 +57,8 @@ Grok 是当前 harness 原则的例外：无论主 harness，Grok 都走 grok-bu
 用户只给任务时：
 
 1. **划可派面。** 已在目标 harness 内则含 native。跨 harness 才要 `wrapper=yes`。官方 Claude、默认不派的 `openai-direct` 不进默认候选。
-2. **硬约束筛。** resume/fork → 复用 worker。Grok → `grok-build`（`grok+cc` 不可用）；gemini → `claude-old`；GPT → `codex-cli`。
-3. **排序**（见 models.md）：杂事 → luna-max，其次 ds/glm-flash；执行器 → `grok-build` + 已验证 Grok；知识 → gemini+cc；审查 → terra/sol。Grok/gemini 不当杂事默认。多条 verified 时 evidence 优先。
+2. **硬约束筛。** resume/fork → 复用 worker。Grok → `grok-build`（`grok+cc` 不可用）；Gemini → 本机 registry 的 exact `verified` binding；GPT → `codex-cli`。
+3. **排序**（见 models.md）：杂事 → luna-max，其次 ds/glm-flash；执行器 → `grok-build` + 已验证 Grok；知识 → 已验证 Gemini binding；审查 → terra/sol。Grok/gemini 不当杂事默认。多条 verified 时 evidence 优先。
 4. **报出所选** 后再调用，并带 effort/context（未指定则用 `runtime-defaults.tsv`）。
 
 ## 派多个组合
