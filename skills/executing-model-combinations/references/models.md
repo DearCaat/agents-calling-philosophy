@@ -21,11 +21,11 @@
 
 角色（`local-experience` / 哲学）：
 
-- **杂事**：luna-max（Codex）首选；其次 ds-flash / glm-flash。Grok 与 gemini 不当杂事默认。杂事 agent 可写代码；不自主改 skill/模型卡/对外叙述。
+- **杂事与日常执行**：优先 `claude-old`（`deepseek-flash` / `glm-5.3-flash`），或 luna-max（Codex）。Grok 与 gemini 不当杂事默认。杂事 agent 可写代码；不自主改 skill/模型卡/对外叙述。
 - **确定任务执行器**：Grok Build；具体 model 与 API 只从本机 registry 的 verified binding 解析。`claude-old` 不承载 Grok。
-- **GPT** 默认 Codex；**DS** 默认 Codex；**Kimi** 以本机 registry 已 verified 的 Codex 行为准。
+- **GPT** 默认 Codex；**ds-flash**（固定名 `deepseek-flash`）与 **glm-5.3-flash** 默认 `claude-old` (cc)；**Gemini** 默认 `antigravity-cli`，禁止走 `claude-old`；**Kimi** 以本机 registry 已 verified 的 Codex 行为准。
 - **审查**：terra / sol（Codex）；关键用 sol。视觉：luna → terra。
-- **知识性任务**：Gemini 默认使用 `antigravity-cli`（`agy`），具体 model 与 API 结合本机 registry 解析。不当杂事，不替代 Grok 执行器。
+- **知识性任务**：Gemini 默认使用 `antigravity-cli`（`agy`），禁止走 `claude-old`，具体 model 与 API 结合本机 registry 解析。不当杂事，不替代 Grok 执行器。
 - Codex `workspace-write` 不能用来判断本机 loopback 是否存活（见 local harnesses）。
 
 默认 effort（运行参数，不是 binding；用户显式指定则用指定值）。`dispatch.sh` 未传 `--effort` 时套同一组；native sub-agent 必须自己带：
@@ -59,7 +59,7 @@
 - 公开能力：两者为 1M context、最大输出 384K，支持 thinking / non-thinking、JSON output 与 Tool Calls（`official`）。`deepseek-v4-flash-vision-exp` 是单独的实验性图像输入模型，不能因为 Flash 文本模型同名而推断视觉可用。
 - 模型官方参考成本：Flash 的 cache-hit / cache-miss input / output 为 off-peak `$0.007` / `$0.22` / `$0.66`，peak `$0.014` / `$0.44` / `$1.32`；Pro 分别为 off-peak `$0.022` / `$0.66` / `$1.98`，peak `$0.044` / `$1.32` / `$3.96`（`official`）。Peak 为周一至周五 01:00–04:00、06:00–10:00 UTC；其余为 off-peak。
 - 本机限制：代理真实请求 ID 不是统一值。registry 中同时存在 `deepseek-v4-flash`、`deepseek-v4-flash-0731` 与 `deepseek-v4-flash-responses`；它们不能互换。PJLab 路径对文浩免费但不改变上述模型官方参考成本（`local-test`，见 [apis.md](local/apis.md)）。
-- 本机经验（`local-experience`）：DS 默认 Codex。Flash 可干杂事（次于 luna-max）；可以写代码，不自主改 skill / 模型卡 / 对外叙述。
+- 本机经验（`local-experience`）：ds-flash 系列默认用 cc (`claude-old`)，模型名固定为 `deepseek-flash`。可干杂事与日常执行；可以写代码，不自主改 skill / 模型卡 / 对外叙述。
 
 ## Kimi K3
 
@@ -75,7 +75,7 @@
 - 公开能力与限制：原生输入覆盖 image、video、file；支持 Function Calling 与 structured output。`thinking.type` 只支持 `enabled`，不能关闭（`official`）。这些是厂商 API 能力，目标 API/harness 是否能表达须另验。
 - 模型官方参考成本：cache-hit `$0.015`、input `$0.075`、output `$0.25`；这是 50% promo 价，原价依次 `$0.03` / `$0.15` / `$0.50`。官方写明促销至 2026-09-09 24:00 UTC+8，cache storage 限时免费（`official`，[Z.AI Pricing](https://docs.z.ai/guides/overview/pricing.md)）。
 - 本机状态：`pjlab-ds + codex-cli + glm-5.3-flash` 已 `verified`（2026-08-28；profile `deepseek-0731`、low、read-only、exit 0）。PJLab 的 `/models` 当日列出该 ID；CLI JSONL 没有返回 model 字段，独立 Responses 探针返回 `glm-5.3-flash`。本 route 只注册 text、禁用 search/parallel tool calls；官方 image/video/file 与 Function Calling 仍不能据此认为由 PJLab+Codex 开放，容量未压测；证据见 [binding-evidence.tsv](local/binding-evidence.tsv)（`local-test`）。
-- 本机经验（`local-experience`）：杂事可用，次于 luna-max；可以写代码，不自主改 skill / 模型卡 / 对外叙述。
+- 本机经验（`local-experience`）：`glm-5.3-flash` 默认用 cc (`claude-old`)。杂事与日常执行可用；可以写代码，不自主改 skill / 模型卡 / 对外叙述。
 
 ## Grok-4.5 / Grok-4.6
 
@@ -90,7 +90,7 @@
 - 公开能力：官方 context 1,048,576、最大输出 65,536；thinking 档 low/medium/high（默认 medium）；输入 text/image/video/audio/PDF，输出 text（`official`，同上）。本机 cc 通道是否打开多模态未压测。
 - 模型官方参考成本：Gemini API 标价至 2026-12-31 为 input `$0.75` / output `$3.75`（含 thinking tokens）/ 1M；2027-01-01 起翻倍（`official`，[Gemini API Pricing](https://ai.google.dev/gemini-api/docs/pricing)）。**不是** 8317 通道账单。
 - 本机限制：8317 `/models` 有 `gemini-3.8-flash-high`，无无后缀的 `gemini-3.8-flash`。2026-09-03 裸 HTTP `/v1/messages` 200，observed `gemini-3.8-flash`，文本 PING。同日 cc `verify.sh`：120s 超时（exit 124，unrecognized_model / 未知窗口），加长后 exit 1 为上游 429 `RESOURCE_EXHAUSTED`。registry 仍为 `configured`。请求 slug 与 observed `gemini-3.8-flash` 必须分列。
-- 本机经验（`local-experience`）：知识性 flash，世界知识与专业知识好于其它 flash，成本同档。harness 只由本机 registry 的 exact `verified` binding 决定；不当杂事，也不替代 Grok 当确定任务执行器。
+- 本机经验（`local-experience`）：知识性 flash，世界知识与专业知识好于其它 flash，成本同档。默认使用 `antigravity-cli` (`agy`)，禁止走 `claude-old`；不当杂事，也不替代 Grok 当确定任务执行器。
 
 ## Claude aliases
 

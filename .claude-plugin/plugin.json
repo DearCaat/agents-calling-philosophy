@@ -1,6 +1,6 @@
 {
   "name": "agents",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "homepage": "https://github.com/DearCaat/agents-calling-philosophy",
   "repository": "https://github.com/DearCaat/agents-calling-philosophy",
   "description": "Portable calling philosophy for API + harness + model combinations; machine inventory is a local overlay.",
