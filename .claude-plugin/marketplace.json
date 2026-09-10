@@ -9,7 +9,7 @@
       "name": "agents",
       "source": "./",
       "description": "Select and execute registered API + harness + model combinations using portable philosophy + local inventory overlay.",
-      "version": "0.1.6"
+      "version": "0.1.7"
     }
   ]
 }

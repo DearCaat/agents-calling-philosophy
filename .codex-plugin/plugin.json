@@ -1,6 +1,6 @@
 {
   "name": "agents",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Portable calling philosophy for API + harness + model combinations; machine inventory is a local overlay.",
   "author": {
     "name": "DearCaat"

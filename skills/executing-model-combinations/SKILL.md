@@ -1,6 +1,6 @@
 ---
 name: executing-model-combinations
-description: 给派工 agent 用：当前 harness 默认派同 harness 的 native sub-agent；Grok 一律走 grok-build，禁止 grok+cc；只给任务则按选择程序自主执行；本机入口以 references/local/bindings.tsv 为准。只讨论厂商通用知识且不涉及本机资源时不使用。
+description: 给派工 agent 用：当前 harness 默认派同 harness 的 native sub-agent；Grok 一律走 grok-build，禁止 grok+cc；Gemini 一律走 antigravity-cli，禁止 gemini+cc；ds-flash 与 glm-5.3-flash 默认走 claude-old (cc)，ds-flash 模型名固定为 deepseek-flash；只给任务则按选择程序自主执行；本机入口以 references/local/bindings.tsv 为准。只讨论厂商通用知识且不涉及本机资源时不使用。
 ---
 
 # 执行模型组合
@@ -42,10 +42,12 @@ Grok 是当前 harness 原则的例外：无论主 harness，Grok 都走 grok-bu
 | grok / grok-4.5 | `grok-build` | `grok-4.5` | 从本机 registry 选已验证 binding |
 | grok-4.6 | `grok-build` | `grok-4.6` | 仅在本机 registry 为 verified 时执行 |
 | grok + cc | — | — | 不可用；改用 grok-build，不得派 `claude-old` |
-| gemini / gemini-3.8-flash | `antigravity-cli` | `gemini-3.8-flash` | 知识性 flash；默认用 agy (Antigravity CLI) |
+| gemini + cc | — | — | 不可用；改用 antigravity-cli，不得派 `claude-old` |
+| gemini / gemini-3.8-flash | `antigravity-cli` | `gemini-3.8-flash` | 知识性 flash；默认用 agy (Antigravity CLI)，禁止走 `claude-old` |
+| ds-flash / deepseek-flash | `claude-old` | `deepseek-flash` | 默认用 CC (`claude-old`)；模型名固定为 `deepseek-flash` |
+| glm / glm-5.3-flash | `claude-old` | `glm-5.3-flash` | 默认用 CC (`claude-old`) |
 | luna-max / 杂事 | `codex-cli` | `gpt-5.6-luna` | 已在 Codex：优先 `spawn_agent`；否则 `codex exec` |
 | GPT terra / sol | `codex-cli` | `gpt-5.6-terra` / `gpt-5.6-sol` | Codex |
-| DS flash | `codex-cli` | `deepseek-v4-flash-0731` | api 由本机 registry 决定 |
 | grok CLI / grok-build | `grok-build` | `grok-4.5` | 与默认 Grok 路径相同 |
 
 官方 Anthropic Claude 默认不派。具体 BASE_URL / binary 见本机 `local/`。
@@ -57,8 +59,8 @@ Grok 是当前 harness 原则的例外：无论主 harness，Grok 都走 grok-bu
 用户只给任务时：
 
 1. **划可派面。** 已在目标 harness 内则含 native。跨 harness 才要 `wrapper=yes`。官方 Claude、默认不派的 `openai-direct` 不进默认候选。
-2. **硬约束筛。** resume/fork → 复用 worker。Grok → `grok-build`（`grok+cc` 不可用）；Gemini → 本机 registry 的 exact `verified` binding；GPT → `codex-cli`。
-3. **排序**（见 models.md）：杂事 → luna-max，其次 ds/glm-flash；执行器 → `grok-build` + 已验证 Grok；知识 → 优先 `antigravity-cli` + 已验证 Gemini binding（若不可用再回退其它 verified Gemini binding）；审查 → terra/sol。Grok/gemini 不当杂事默认。多条 verified 时 evidence 优先。
+2. **硬约束筛。** resume/fork → 复用 worker。Grok → `grok-build`（`grok+cc` 不可用）；Gemini → `antigravity-cli`（`gemini+cc` 不可用）；deepseek-flash / glm-5.3-flash → `claude-old`（默认 CC）；GPT → `codex-cli`。
+3. **排序**（见 models.md）：杂事与日常执行 → 优先 `claude-old`（`deepseek-flash` / `glm-5.3-flash`），或 luna-max；执行器 → `grok-build` + 已验证 Grok；知识性任务 → `antigravity-cli` + `gemini-3.8-flash`；审查 → terra/sol。Grok/gemini 不当杂事默认。多条 verified 时 evidence 优先。
 4. **报出所选** 后再调用，并带 effort/context（未指定则用 `runtime-defaults.tsv`）。
 
 ## 派多个组合

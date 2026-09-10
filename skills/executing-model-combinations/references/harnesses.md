@@ -89,6 +89,8 @@ resume/fork 从原 cwd 启动，不再传新会话的 profile 或 `-C`。外部�
 
 - 用 `ANTHROPIC_DEFAULT_*` 把子 agent 的 sonnet/opus/haiku/fable alias 钉到请求模型族，避免落到目录里真实存在的 `claude-sonnet-4-6`。
 - 内建 catalog 没有 grok/gemini 时会出现 `unrecognized_model` 警告；不等于调用失败。
+- `deepseek-flash` 与 `glm-5.3-flash` 默认使用 `claude-old`。
+- `gemini` 系列禁止在 `claude-old` 下派发（必须使用 `antigravity-cli`）；Grok 禁止在 `claude-old` 下派发（必须使用 `grok-build`）。
 - `--autocompact` 与 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 绑死；默认见 portable [runtime-defaults.tsv](runtime-defaults.tsv) / [models.md](models.md)（context 属调用哲学）。
 - 支持 continue/resume/fork、`--effort`、permission/tool 参数。压缩较好适合长线程（harness 经验）。
 

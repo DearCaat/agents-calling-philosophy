@@ -222,6 +222,8 @@ fi
   die 'provide all of --api --harness --model'
 [[ $HARNESS != claude-old || $MODEL != grok-* ]] || \
   die 'Grok must use harness=grok-build; claude-old Grok bindings are forbidden'
+[[ $HARNESS != claude-old || $MODEL != gemini* ]] || \
+  die 'Gemini must use harness=antigravity-cli; claude-old Gemini bindings are forbidden'
 mapfile -t MATCHES < <(binding_data | awk -F '\t' \
   -v api="$API" -v harness="$HARNESS" -v model="$MODEL" \
   '$1 == api && $2 == harness && $3 == model')
