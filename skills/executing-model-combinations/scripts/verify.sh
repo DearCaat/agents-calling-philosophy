@@ -216,6 +216,7 @@ case $RESOLVED_HARNESS in
   codex-cli) ENTRYPOINT='codex exec' ;;
   claude-old) ENTRYPOINT='claude_old -p' ;;
   dsh) ENTRYPOINT='dsh --profile headless' ;;
+  antigravity-cli) ENTRYPOINT='agy -p' ;;
 esac
 
 PROBE_TEXT=$(extract_probe_text "$OUT" "$RESOLVED_HARNESS" | normalize_probe_text)

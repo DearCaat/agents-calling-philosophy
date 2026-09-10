@@ -20,6 +20,7 @@ set +a
 | `claude-old` | PATH 上的 `claude_old`（wrapper → `~/.local/share/claude_old/current`，当前 2.1.259；HOME=`~/.claude_old_env`） | `-p/--print` | continue/resume/fork | `--autocompact auto|100k–1M` | permission mode、allow/deny tools、agents；数值并发未核实 |
 | `dsh` | 历史版本 `dsh 0.1.1-rc.2`；本机未安装（2026-09-03 探测：PATH / nvm login shell / `~/.dsh` 均无） | `--profile headless` | 每次新 session；headless 无 follow-up/resume | basic compaction：auto、threshold 0.8、retain 0.16、summary 8192 | 默认 workspace-write + ask；内建 retry；subagent maxDepth 3；parallel tool calls 默认 10 |
 | `grok-build` | `grok 1.0.13` | prompt / prompt-file | continue/resume/fork | 精确上下文压缩行为未核实 | sandbox、permission mode、subagents；数值并发未核实 |
+| `antigravity-cli` | `agy 1.2.0` | `-p/--print` | continue/conversation | 上下文超限由 CLI 内部自动处理 | sandbox/dangerously-skip-permissions、MCP、subagent |
 
 ## 选择时可比较的 harness 特点
 
@@ -30,6 +31,7 @@ set +a
 - `claude-old`：支持 continue/resume/fork、`--autocompact` 与 permission/tool 参数。文浩的 `local-experience` 是其压缩较好，长程任务可优先考虑；这不证明当前本地代理的 alias 对应某个 Claude 上游模型，也不代表每类任务更强。
 - `dsh`：有原生 retry 和内部 subagent/parallel tool-call 能力；但当前 headless profile 固定，不能逐次传 model、effort、cwd、JSON output 或 resume。因此它的灵活组合性低于可逐次 selector 的 Codex CLI，新增组合必须先有新的可核实 profile。
 - `grok-build`：支持 session continue/resume/fork、sandbox 与 subagents；当前模型压缩行为和数值并发未核实，且已有请求 model 与 observed model 漂移的事实。需要精确复现时必须记录两者。
+- `antigravity-cli`：入口为 PATH 上的 `agy`（当前 1.2.0），Google Antigravity 2.0 原生 CLI。支持 `-p/--print`、`--model`、`--effort`、`--continue`、`--dangerously-skip-permissions`。直连本地网关或 Gemini API，原生大上下文吞吐与多 Agent 编排速度快。知识性任务首选 Harness。
 
 ## Codex native sub-agent
 

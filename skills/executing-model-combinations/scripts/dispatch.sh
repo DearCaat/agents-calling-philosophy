@@ -350,6 +350,13 @@ case $RESOLVED_HARNESS in
     [[ -z $EFFORT ]] || DISPLAY_COMMAND+=(--reasoning-effort "$EFFORT")
     DISPLAY_COMMAND+=(--output-format json --prompt-file "$PROMPT_FILE")
     ;;
+  antigravity-cli)
+    AGY_MODEL=${SELECTOR#agy:}
+    [[ -n $AGY_MODEL ]] || AGY_MODEL="$RESOLVED_MODEL"
+    DISPLAY_COMMAND=(agy --model "$AGY_MODEL")
+    [[ -z $EFFORT ]] || DISPLAY_COMMAND+=(--effort "$EFFORT")
+    DISPLAY_COMMAND+=(--dangerously-skip-permissions -p '<' "$PROMPT_FILE")
+    ;;
   *) die "unsupported harness: $RESOLVED_HARNESS" ;;
 esac
 
@@ -416,6 +423,14 @@ case $RESOLVED_HARNESS in
     COMMAND+=(--output-format json --prompt-file "$PROMPT_FILE")
     command -v grok >/dev/null 2>&1 || die 'executable not found: grok'
     ;;
+  antigravity-cli)
+    AGY_MODEL=${SELECTOR#agy:}
+    [[ -n $AGY_MODEL ]] || AGY_MODEL="$RESOLVED_MODEL"
+    COMMAND=(agy --model "$AGY_MODEL" --dangerously-skip-permissions)
+    [[ -z $EFFORT ]] || COMMAND+=(--effort "$EFFORT")
+    COMMAND+=(-p)
+    command -v agy >/dev/null 2>&1 || die 'executable not found: agy'
+    ;;
 esac
 
 [[ -z $OUT ]] || mkdir -p -- "$(dirname -- "$OUT")"
@@ -450,6 +465,14 @@ invoke() {
       ) <"$PROMPT_FILE"
       ;;
     grok-build) "${prefix[@]}" "${COMMAND[@]}" ;;
+    antigravity-cli)
+      (
+        cd -- "$WORK_DIR"
+        [[ -n ${GEMINI_API_KEY:-} ]] || export GEMINI_API_KEY="${OPENAI_LOCAL_8317_TOKEN:-cpa_39e79f04715548d3efa4ae0fa9a38f3e387f1330edc485252b82e543a2427346}"
+        [[ -n ${GOOGLE_GEMINI_BASE_URL:-} ]] || export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:8317"
+        "${prefix[@]}" "${COMMAND[@]}" "$(<"$PROMPT_FILE")"
+      )
+      ;;
   esac
 }
 

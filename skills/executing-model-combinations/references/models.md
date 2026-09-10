@@ -25,7 +25,7 @@
 - **确定任务执行器**：Grok Build；具体 model 与 API 只从本机 registry 的 verified binding 解析。`claude-old` 不承载 Grok。
 - **GPT** 默认 Codex；**DS** 默认 Codex；**Kimi** 以本机 registry 已 verified 的 Codex 行为准。
 - **审查**：terra / sol（Codex）；关键用 sol。视觉：luna → terra。
-- **知识性任务**：Gemini 的本机 registry exact `verified` binding。Gemini 不预设 harness；不当杂事，不替代 Grok 执行器。
+- **知识性任务**：Gemini 默认使用 `antigravity-cli`（`agy`），具体 model 与 API 结合本机 registry 解析。不当杂事，不替代 Grok 执行器。
 - Codex `workspace-write` 不能用来判断本机 loopback 是否存活（见 local harnesses）。
 
 默认 effort（运行参数，不是 binding；用户显式指定则用指定值）。`dispatch.sh` 未传 `--effort` 时套同一组；native sub-agent 必须自己带：
