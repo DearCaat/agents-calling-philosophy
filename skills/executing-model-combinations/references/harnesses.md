@@ -18,7 +18,7 @@ set +a
 | `codex-subagent` | 当前 Codex 宿主协作工具 | `spawn_agent` | `followup_task` 继续同一 child；无 shell resume | 宿主管理，参数不暴露 | 共享 filesystem/cwd；当前团队总槽位 11；child 可再派 child |
 | `codex-cli` | PATH 上的 `codex`（当前 0.153.0） | `codex exec` | exec `resume` / `fork` | request compression 与 remote compaction feature 当前开启；无 `--autocompact` | sandbox 三档、approval；本机 multi-agent v2 最大 11 子线程 |
 | `claude-old` | PATH 上的 `claude_old`（wrapper → `~/.local/share/claude_old/current`，当前 2.1.259；HOME=`~/.claude_old_env`） | `-p/--print` | continue/resume/fork | `--autocompact auto|100k–1M` | permission mode、allow/deny tools、agents；数值并发未核实 |
-| `dsh` | 历史版本 `dsh 0.1.1-rc.2`；本机未安装（2026-09-03 探测：PATH / nvm login shell / `~/.dsh` 均无） | `--profile headless` | 每次新 session；headless 无 follow-up/resume | basic compaction：auto、threshold 0.8、retain 0.16、summary 8192 | 默认 workspace-write + ask；内建 retry；subagent maxDepth 3；parallel tool calls 默认 10 |
+| `dsh` | `dsh`（DeepSeek Harness；交互版 `dst` = dsh-tui，不能脚本化） | `--profile headless`，`-` 读 stdin | 每次新 session；`--session-id` 可接续 | basic compaction：auto、threshold 0.8、retain 0.16、summary 8192 | 默认 workspace-write + ask；内建 retry；subagent maxDepth 3；parallel tool calls 默认 10 |
 | `grok-build` | `grok 1.0.13` | prompt / prompt-file | continue/resume/fork | 精确上下文压缩行为未核实 | sandbox、permission mode、subagents；数值并发未核实 |
 | `antigravity-cli` | `agy 1.2.0` | `-p/--print` | continue/conversation | 上下文超限由 CLI 内部自动处理 | sandbox/dangerously-skip-permissions、MCP、subagent |
 
@@ -29,7 +29,7 @@ set +a
 - `codex-subagent`：唯一可直接使用当前 Codex 宿主协作工具的入口；child 与 main 共享 filesystem/cwd，可用 `followup_task` 延续局部上下文。宿主内需要调用已登记 GPT 时优先它；其限制是不能作为独立 shell session resume，也不能承载其他厂商模型。
 - `codex-cli`：可在新会话中显式选择已登记 profile / model / effort，支持 `exec resume` 与 `fork`、JSONL 和 output schema；适合需要独立 CLI session 或外部并行的已登记组合。它不会因为 catalog 有条目就让缺失 binding 的模型变得可执行。
 - `claude-old`：支持 continue/resume/fork、`--autocompact` 与 permission/tool 参数。文浩的 `local-experience` 是其压缩较好，长程任务可优先考虑；这不证明当前本地代理的 alias 对应某个 Claude 上游模型，也不代表每类任务更强。
-- `dsh`：有原生 retry 和内部 subagent/parallel tool-call 能力；但当前 headless profile 固定，不能逐次传 model、effort、cwd、JSON output 或 resume。因此它的灵活组合性低于可逐次 selector 的 Codex CLI，新增组合必须先有新的可核实 profile。
+- `dsh`：有原生 retry 和内部 subagent/parallel tool-call 能力。headless 没有逐次 `--model`/`--effort`；`dispatch.sh` 每次写一个一次性 `--patch` 覆盖 `agent-default-model` 来选模型，effort 不逐次传。cwd 取进程当前目录。`dst` 的 preset（如 minimal）只对 TUI 生效，headless 不读。
 - `grok-build`：支持 session continue/resume/fork、sandbox 与 subagents；当前模型压缩行为和数值并发未核实，且已有请求 model 与 observed model 漂移的事实。需要精确复现时必须记录两者。
 - `antigravity-cli`：入口为 PATH 上的 `agy`（当前 1.2.0），Google Antigravity 2.0 原生 CLI。支持 `-p/--print`、`--model`、`--effort`、`--continue`、`--dangerously-skip-permissions`。直连本地网关或 Gemini API，原生大上下文吞吐与多 Agent 编排速度快。知识性任务首选 Harness。
 
@@ -89,7 +89,7 @@ resume/fork 从原 cwd 启动，不再传新会话的 profile 或 `-C`。外部�
 
 - 用 `ANTHROPIC_DEFAULT_*` 把子 agent 的 sonnet/opus/haiku/fable alias 钉到请求模型族，避免落到目录里真实存在的 `claude-sonnet-4-6`。
 - 内建 catalog 没有 grok/gemini 时会出现 `unrecognized_model` 警告；不等于调用失败。
-- `deepseek-flash` 与 `glm-5.3-flash` 默认使用 `claude-old`。
+- DeepSeek 与 glm-5.3-flash 首选 `dsh`（见 [models.md](models.md)）；`claude-old` 只用本机 registry 中 verified 的行。
 - `gemini` 系列禁止在 `claude-old` 下派发（必须使用 `antigravity-cli`）；Grok 禁止在 `claude-old` 下派发（必须使用 `grok-build`）。
 - `--autocompact` 与 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 绑死；默认见 portable [runtime-defaults.tsv](runtime-defaults.tsv) / [models.md](models.md)（context 属调用哲学）。
 - 支持 continue/resume/fork、`--effort`、permission/tool 参数。压缩较好适合长线程（harness 经验）。
@@ -107,19 +107,17 @@ Token 不得出现在 argv；prompt 用 `-p < file`。
 
 ## dsh
 
-本机未安装（2026-09-03 探测：PATH / nvm login shell / `~/.dsh` 均无）；以下保留历史能力事实。`dispatch.sh` 的 dsh 分支为未来安装保留。
-
 ```bash
-source ~/.nvm/nvm.sh
 cd "$DIR"
-DSH_HOME="$PLUGIN_ROOT/private/runtime/dsh-home" \
-DSH_AGENTS_HOME="$PLUGIN_ROOT" \
-  dsh --profile headless "$(<"$PROMPT_FILE")" >"$OUT" 2>"$ERR"
+printf -- "- id: agent-default-model\n  config:\n    provider: %s\n    model: %s\n" "$PROVIDER" "$MODEL" >"$PATCH"
+DEEPSEEK_API_KEY=... dsh --profile headless --patch "$PATCH" - <"$PROMPT_FILE" >"$OUT" 2>"$ERR"
 ```
 
-headless 任务文本作为 argv 传入，可能短暂出现在本机进程列表。该入口没有逐次 `--model`、`--effort`、`--cwd`、JSON output 或 resume；当前 API/model/effort 从打包的 `private/runtime/dsh-home/settings.yaml` 读取。需要切 API/model 时先形成新的可核实 profile 和 binding，不能把 Codex profile 参数套给 dsh。`DSH_AGENTS_HOME="$PLUGIN_ROOT"` 让 dsh 加载同一 `skills/`，不是安装 Cordis/npm plugin。
-
-dsh 当前加载 `dsh-llm-retry`。provider 未覆盖 `retryPolicy` 时，normal mode 默认对 rate limit、server、timeout、transport 和 empty-response 错误最多重试 5 次，backoff 约 500 ms–10 s。这是原生 harness 行为；`dispatch.sh` 不在其外层再重试。
+- `--patch` 要放在 app 参数（`--json`、任务文本）之前，否则报 unknown option。
+- provider 的 endpoint 与模型列表在用户自己的 dsh 配置里（本机见 `local/harnesses.md`）；`dispatch.sh` 只覆盖所选模型。
+- provider 的 key 环境变量必须非空：为空时 dsh 会回退读工作目录的 `.env`。
+- stdout 只有最终文本，reasoning 与诊断进 stderr；`--json` 输出 JSONL 事件（不含模型名）。退出码 0 表示最后一轮完成。
+- dsh 自带 `dsh-llm-retry`；`dispatch.sh` 不在其外层再重试。
 
 ## Grok Build
 

@@ -193,8 +193,8 @@ DISPATCH_ARGS=(--api "$RESOLVED_API" --harness "$RESOLVED_HARNESS" --model "$RES
   --prompt-file "$PROMPT" --dir "$WORK_DIR" --out "$OUT" --stderr "$ERR" \
   --timeout-seconds "$TIMEOUT_SECONDS" --allow-state "$BINDING_STATE")
 # Minimal probe: do not inherit production effort defaults (luna max / grok high).
-[[ -n $EFFORT ]] || EFFORT=low
-DISPATCH_ARGS+=(--effort "$EFFORT")
+[[ -n $EFFORT || $HARNESS == dsh ]] || EFFORT=low
+[[ -z $EFFORT ]] || DISPATCH_ARGS+=(--effort "$EFFORT")
 
 set +e
 "$DISPATCH" "${DISPATCH_ARGS[@]}"

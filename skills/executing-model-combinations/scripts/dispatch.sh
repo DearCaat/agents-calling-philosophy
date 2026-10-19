@@ -13,6 +13,7 @@ source "$SCRIPT_DIR/lib/data-root.sh"
 agents_apply_data_root
 BINDINGS_FILE="$LOCAL_ROOT/bindings.tsv"
 ADAPTERS_FILE="$LOCAL_ROOT/adapters.tsv"
+ROUTES_FILE="$LOCAL_ROOT/api-routes.tsv"
 DEFAULTS_FILE="$SKILL_DIR/references/runtime-defaults.tsv"
 
 LOGIN_HOME=$(getent passwd "${USER:-$(id -un)}" | cut -d: -f6)
@@ -129,12 +130,13 @@ maybe_source_nvm() {
 }
 
 # Pin every Claude Code alias to the requested non-Grok model so a cc worker
-# cannot silently fall onto a Grok or Anthropic model.
+# cannot silently fall onto a Grok or Anthropic model. Uses the selector's wire
+# name (e.g. a gateway-prefixed id), not the bare registry model id.
 set_claude_default_models() {
-  CLAUDE_DEFAULT_OPUS=$RESOLVED_MODEL
-  CLAUDE_DEFAULT_SONNET=$RESOLVED_MODEL
-  CLAUDE_DEFAULT_HAIKU=$RESOLVED_MODEL
-  CLAUDE_DEFAULT_FABLE=$RESOLVED_MODEL
+  CLAUDE_DEFAULT_OPUS=$CLAUDE_MODEL
+  CLAUDE_DEFAULT_SONNET=$CLAUDE_MODEL
+  CLAUDE_DEFAULT_HAIKU=$CLAUDE_MODEL
+  CLAUDE_DEFAULT_FABLE=$CLAUDE_MODEL
 }
 
 # Runtime defaults from portable references/runtime-defaults.tsv (first glob match).
@@ -171,6 +173,19 @@ default_context_for_model() {
   compact=$(printf '%s\n' "$row" | cut -f4)
   [[ -n $tokens && $tokens != - && -n $compact && $compact != - ]] || { printf ''; return 0; }
   printf '%s|%s' "$tokens" "$compact"
+}
+
+# Host of an API route whose notes say "direct only" (channel rejects proxied
+# traffic); empty otherwise. Used to exempt it from the forced proxy below.
+direct_only_host_for_api() {
+  local api=$1
+  [[ -r $ROUTES_FILE ]] || return 0
+  awk -F '\t' -v api="$api" '
+    /^#/ || NF == 0 { next }
+    $1 == api && $8 ~ /direct only/ {
+      host = $2; sub(/^[a-z]+:\/\//, "", host); sub(/[:\/].*$/, "", host); print host; exit
+    }
+  ' "$ROUTES_FILE"
 }
 
 # Local adapter for (api, harness): base_url, credential_ref, token_env
@@ -239,7 +254,8 @@ if ! binding_state_allowed "$BINDING_STATE"; then
   die "binding state is $BINDING_STATE; normal dispatch and dry-run accept verified bindings only"
 fi
 
-if [[ -z $EFFORT ]]; then
+# dsh headless takes no per-call effort, so its runtime default is not applied.
+if [[ -z $EFFORT && $RESOLVED_HARNESS != dsh ]]; then
   EFFORT=$(default_effort_for_model "$RESOLVED_MODEL")
 fi
 if [[ -n $EFFORT ]]; then
@@ -299,10 +315,17 @@ case $RESOLVED_HARNESS in
       -C "$WORK_DIR" --skip-git-repo-check - '<' "$PROMPT_FILE")
     ;;
   dsh)
-    # Kept so a future dsh install can reuse this branch; this machine has no dsh
-    # as of 2026-09-03 and the registry no longer lists a dsh binding.
-    DISPLAY_COMMAND=(env "DSH_HOME=$DSH_RUNTIME_HOME" "DSH_AGENTS_HOME=$PLUGIN_ROOT" \
-      dsh --profile headless '<prompt-file>')
+    # Headless dsh has no per-call --model; the model comes from a one-shot
+    # --patch overlay. Provider endpoint stays in the user's dsh config.
+    DSH_MODEL=${SELECTOR#dsh:}
+    [[ -n $DSH_MODEL && $DSH_MODEL != "$SELECTOR" ]] || die 'invalid dsh selector'
+    DSH_ADAPTER_ROW=$(lookup_adapter "$RESOLVED_API" dsh) || \
+      die "no local adapter for api=$RESOLVED_API harness=dsh in $ADAPTERS_FILE"
+    IFS=$'\t' read -r _ADAPTER_API _ADAPTER_HARNESS _DSH_BASE_URL DSH_CRED_REF DSH_TOKEN_ENV \
+      <<<"$DSH_ADAPTER_ROW"
+    [[ -n $DSH_CRED_REF && -n $DSH_TOKEN_ENV ]] || die 'dsh adapter row missing credential_ref or token_env'
+    DSH_PROVIDER=${DSH_PROVIDER:-deepseek-official}
+    DISPLAY_COMMAND=(dsh --profile headless --patch '<model-patch>' - '<' "$PROMPT_FILE")
     ;;
   claude-old)
     CLAUDE_MODEL=${SELECTOR#claude:}
@@ -355,9 +378,11 @@ case $RESOLVED_HARNESS in
   antigravity-cli)
     AGY_MODEL=${SELECTOR#agy:}
     [[ -n $AGY_MODEL ]] || AGY_MODEL="$RESOLVED_MODEL"
+    # agy -p CLI default --print-timeout is 5m; local-experience: too short. Wrapper default 12h.
+    AGY_PRINT_TIMEOUT=${AGY_PRINT_TIMEOUT:-12h}
     DISPLAY_COMMAND=(agy --model "$AGY_MODEL")
     [[ -z $EFFORT ]] || DISPLAY_COMMAND+=(--effort "$EFFORT")
-    DISPLAY_COMMAND+=(--dangerously-skip-permissions -p '<' "$PROMPT_FILE")
+    DISPLAY_COMMAND+=(--dangerously-skip-permissions --print-timeout "$AGY_PRINT_TIMEOUT" -p '<' "$PROMPT_FILE")
     ;;
   *) die "unsupported harness: $RESOLVED_HARNESS" ;;
 esac
@@ -400,9 +425,16 @@ case $RESOLVED_HARNESS in
     command -v codex >/dev/null 2>&1 || die 'executable not found: codex'
     ;;
   dsh)
-    COMMAND=(env "DSH_HOME=$DSH_RUNTIME_HOME" "DSH_AGENTS_HOME=$PLUGIN_ROOT" \
-      dsh --profile headless "$(<"$PROMPT_FILE")")
     command -v dsh >/dev/null 2>&1 || die 'executable not found: dsh'
+    [[ -n ${!DSH_CRED_REF:-} ]] || \
+      die "credentials file does not define required variable: $DSH_CRED_REF"
+    # An empty provider key makes dsh fall back to a .env file; never allow that.
+    DSH_AUTH_TOKEN=${!DSH_CRED_REF}
+    DSH_PATCH=$(mktemp "${TMPDIR:-/tmp}/dispatch-dsh.XXXXXX.yml")
+    trap 'rm -f -- "$DSH_PATCH"' EXIT
+    printf -- '- id: agent-default-model\n  config:\n    provider: %s\n    model: %s\n' \
+      "$DSH_PROVIDER" "$DSH_MODEL" >"$DSH_PATCH"
+    COMMAND=(dsh --profile headless --patch "$DSH_PATCH" -)
     ;;
   claude-old)
     command -v "$CLAUDE_OLD_BIN" >/dev/null 2>&1 || die "executable not found: $CLAUDE_OLD_BIN"
@@ -428,7 +460,8 @@ case $RESOLVED_HARNESS in
   antigravity-cli)
     AGY_MODEL=${SELECTOR#agy:}
     [[ -n $AGY_MODEL ]] || AGY_MODEL="$RESOLVED_MODEL"
-    COMMAND=(agy --model "$AGY_MODEL" --dangerously-skip-permissions)
+    AGY_PRINT_TIMEOUT=${AGY_PRINT_TIMEOUT:-12h}
+    COMMAND=(agy --model "$AGY_MODEL" --dangerously-skip-permissions --print-timeout "$AGY_PRINT_TIMEOUT")
     [[ -z $EFFORT ]] || COMMAND+=(--effort "$EFFORT")
     COMMAND+=(-p)
     command -v agy >/dev/null 2>&1 || die 'executable not found: agy'
@@ -441,9 +474,31 @@ esac
 invoke() {
   local -a prefix=()
   ((TIMEOUT_SECONDS == 0)) || prefix=(timeout --signal=TERM --kill-after=5 "$TIMEOUT_SECONDS")
+
+  # Non-Claude child harnesses must NEVER inherit Claude Code dedicated 17890 (Japan 3x) proxy.
+  # Force reset to default system proxy (7890).
+  export HTTP_PROXY=http://127.0.0.1:7890
+  export HTTPS_PROXY=http://127.0.0.1:7890
+  export http_proxy=http://127.0.0.1:7890
+  export https_proxy=http://127.0.0.1:7890
+  local direct_host
+  direct_host=$(direct_only_host_for_api "$RESOLVED_API")
+  if [[ -n $direct_host ]]; then
+    export NO_PROXY="${NO_PROXY:+$NO_PROXY,}$direct_host"
+    export no_proxy="${no_proxy:+$no_proxy,}$direct_host"
+  fi
+
   case $RESOLVED_HARNESS in
     codex-cli) "${prefix[@]}" "${COMMAND[@]}" <"$PROMPT_FILE" ;;
-    dsh) (cd -- "$WORK_DIR" && "${prefix[@]}" "${COMMAND[@]}") ;;
+    dsh)
+      (
+        cd -- "$WORK_DIR"
+        export "$DSH_TOKEN_ENV=$DSH_AUTH_TOKEN"
+        export NO_PROXY="${NO_PROXY:+$NO_PROXY,}127.0.0.1,localhost"
+        export no_proxy="${no_proxy:+$no_proxy,}127.0.0.1,localhost"
+        "${prefix[@]}" "${COMMAND[@]}"
+      ) <"$PROMPT_FILE"
+      ;;
     claude-old)
       (
         cd -- "$WORK_DIR"
@@ -470,7 +525,7 @@ invoke() {
     antigravity-cli)
       (
         cd -- "$WORK_DIR"
-        [[ -n ${GEMINI_API_KEY:-} ]] || export GEMINI_API_KEY="${OPENAI_LOCAL_8317_TOKEN:-REDACTED}"
+        [[ -n ${GEMINI_API_KEY:-} ]] || export GEMINI_API_KEY="${OPENAI_LOCAL_8317_TOKEN:?credentials.env must define OPENAI_LOCAL_8317_TOKEN}"
         [[ -n ${GOOGLE_GEMINI_BASE_URL:-} ]] || export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:8317"
         "${prefix[@]}" "${COMMAND[@]}" "$(<"$PROMPT_FILE")"
       )

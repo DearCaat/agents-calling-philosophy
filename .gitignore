@@ -4,3 +4,7 @@ private/
 **/*.pem
 .DS_Store
 .codex-marketplace-install.json
+runs/
+archive/
+skills/executing-model-combinations/references/local
+*.bak-*
