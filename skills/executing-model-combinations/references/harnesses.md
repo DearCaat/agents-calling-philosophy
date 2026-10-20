@@ -29,7 +29,7 @@ set +a
 - `codex-subagent`：唯一可直接使用当前 Codex 宿主协作工具的入口；child 与 main 共享 filesystem/cwd，可用 `followup_task` 延续局部上下文。宿主内需要调用已登记 GPT 时优先它；其限制是不能作为独立 shell session resume，也不能承载其他厂商模型。
 - `codex-cli`：可在新会话中显式选择已登记 profile / model / effort，支持 `exec resume` 与 `fork`、JSONL 和 output schema；适合需要独立 CLI session 或外部并行的已登记组合。它不会因为 catalog 有条目就让缺失 binding 的模型变得可执行。
 - `claude-old`：支持 continue/resume/fork、`--autocompact` 与 permission/tool 参数。文浩的 `local-experience` 是其压缩较好，长程任务可优先考虑；这不证明当前本地代理的 alias 对应某个 Claude 上游模型，也不代表每类任务更强。
-- `dsh`：有原生 retry 和内部 subagent/parallel tool-call 能力。headless 没有逐次 `--model`/`--effort`；`dispatch.sh` 每次写一个一次性 `--patch` 覆盖 `agent-default-model` 来选模型，effort 不逐次传。cwd 取进程当前目录。`dst` 的 preset（如 minimal）只对 TUI 生效，headless 不读。
+- `dsh`：有原生 retry 和内部 subagent/parallel tool-call 能力。headless 没有逐次 `--model`/`--effort`；`dispatch.sh` 每次写一个一次性 `--patch` 覆盖 `agent-default-model` 来选模型，effort 不逐次传。cwd 取进程当前目录。preset（如 minimal）与 profile 是两层：preset 由 api-session-controller 在创建会话时挂载（web profile 加载它），headless runner 不经过它，所以 headless 下设默认 preset 不生效。要在 headless 用 minimal 的工具面，把 minimal 的插件表平铺成 `--patch`（覆盖已有行用 `- id:`，新增行如 MCP 工具用 `- insert:`）。
 - `grok-build`：支持 session continue/resume/fork、sandbox 与 subagents；当前模型压缩行为和数值并发未核实，且已有请求 model 与 observed model 漂移的事实。需要精确复现时必须记录两者。
 - `antigravity-cli`：入口为 PATH 上的 `agy`（当前 1.2.0），Google Antigravity 2.0 原生 CLI。支持 `-p/--print`、`--model`、`--effort`、`--continue`、`--dangerously-skip-permissions`。直连本地网关或 Gemini API，原生大上下文吞吐与多 Agent 编排速度快。知识性任务首选 Harness。
 
