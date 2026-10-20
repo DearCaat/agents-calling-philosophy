@@ -33,6 +33,10 @@ set +a
 - `grok-build`：支持 session continue/resume/fork、sandbox 与 subagents；当前模型压缩行为和数值并发未核实，且已有请求 model 与 observed model 漂移的事实。需要精确复现时必须记录两者。
 - `antigravity-cli`：入口为 PATH 上的 `agy`（当前 1.2.0），Google Antigravity 2.0 原生 CLI。支持 `-p/--print`、`--model`、`--effort`、`--continue`、`--dangerously-skip-permissions`。直连本地网关或 Gemini API，原生大上下文吞吐与多 Agent 编排速度快。知识性任务首选 Harness。
 
+## 厚薄
+
+最薄的是 dsh 套 minimal 工具面，基本只有模型加少量工具（headless 下要平铺成 `--patch`，见上文 dsh 条）；dsh 默认 profile 多了内建 retry、subagent 和并行工具调用；`codex-cli`、`claude-old`、`grok-build`、`antigravity-cli` 是成熟的厚 harness，有压缩、子代理、沙箱和会话续用。厚薄的取舍见 [executors.md](executors.md)。
+
 ## Codex native sub-agent
 
 这是 Codex 宿主当前会话中的工具，不是 shell 命令，Claude Code、dsh 和 Grok 不能直接调用它。显式覆盖 model/effort 时，`fork_turns` 使用 `none` 或正整数：

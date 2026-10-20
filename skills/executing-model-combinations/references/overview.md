@@ -4,6 +4,7 @@
 
 ## Portable（跨机器）
 
+- [executors.md](executors.md)：四类执行者（脚本、判定模型、直接调用 API、harness）的特点与取舍。
 - [models.md](models.md)：厂商卡、角色排序、effort 默认；context **政策**见同文 + [runtime-defaults.tsv](runtime-defaults.tsv)（`dispatch.sh` 唯读此表实现）。
 - [harnesses.md](harnesses.md)：原生命令形状、session、压缩语义、spawn_agent 规格——**无**本机 URL/HOME。
 - 资料类型标签：`official` / `local-test` / `local-experience`（证据种类，不是目录名）。

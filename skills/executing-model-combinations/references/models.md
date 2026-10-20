@@ -98,6 +98,11 @@
 - 8317 目录含 `claude-sonnet-4-6` 等 slug；它们不是本 bundle 的 binding。2026-08-28 经旧 15721 通道的 `claude-sonnet-4-6` probe 身份冲突，见 [binding-failures.tsv](local/binding-failures.tsv)（历史记录，不是当前 registry）。
 - 不写 Anthropic 官方参考成本。默认不派官方 Claude。Claude Code 的压缩优势写在 [harnesses.md](harnesses.md)。Kimi 可派的是 Codex + pjlab，不是 cc。
 
+## 判定模型：jev
+
+- 身份：返回概率的判定模型服务，不生成文字；只在给定的题型里判（选项 choice、是/否/不确定 noul、打分 score），不能抽取。网关上有哪些模型、deadline 多少会变，有的一天内就变，用前先查 `/v1/models`；部分模型能看图。本机入口见 [apis.md](local/apis.md)。
+- 本机经验（`local-experience`）：证据就在输入里、答案闭合的问题较可靠；没有标准答案的开放评价、依赖多步推理的规则判断接近随机。原因是它只给概率、不展开推理，问题越开放、越依赖多步推理就越不可靠，这类判断交给直接调用的 LLM API。不同模型的阈值不能互用。
+
 ## OpenRouter：动态候选，不是本机执行入口
 
 OpenRouter Models API 可动态返回候选 ID、加入时间、input/output 模态、context、**OpenRouter API 路径价格**、top provider、支持参数、失效日期及部分 benchmark。使用提供的只读工具：

@@ -1,11 +1,13 @@
 ---
 name: executing-model-combinations
-description: 给派工 agent 用：当前 harness 默认派同 harness 的 native sub-agent；Grok 一律走 grok-build，禁止 grok+cc；Gemini 一律走 antigravity-cli，禁止 gemini+cc；DeepSeek 优先 dsh，其次 codex-cli；同一 harness+model 有多条通道时按本机 registry 的行序取第一条 verified，只在出错或额度用完时降级，或用户点名；只给任务则按选择程序自主执行；本机入口以 $AGENTS_DATA_ROOT/local/bindings.tsv 为准。只讨论厂商通用知识且不涉及本机资源时不使用。
+description: 给派工 agent 用：一件活交给谁——脚本、判定模型（jev）、直接调用的 LLM API、harness+model——各自的特点与本机入口；选了 harness 时，当前 harness 默认派同 harness 的 native sub-agent；Grok 一律走 grok-build，禁止 grok+cc；Gemini 一律走 antigravity-cli，禁止 gemini+cc；DeepSeek 优先 dsh，其次 codex-cli；同一 harness+model 有多条通道时按本机 registry 的行序取第一条 verified，只在出错或额度用完时降级，或用户点名；只给任务则按选择程序自主执行；本机入口以 $AGENTS_DATA_ROOT/local/bindings.tsv 为准。只讨论厂商通用知识且不涉及本机资源时不使用。
 ---
 
 # 执行模型组合
 
-本 skill 让当前调用方按**调用哲学**选出 `harness + model`，再在**本机 inventory**（`$AGENTS_DATA_ROOT/local/`）解析 `api` 并执行。profile、effort、搜索开关、权限、context 是运行参数，不属于 binding 身份。
+执行者有四类：脚本、判定模型、直接调用的 LLM API、harness 里的 agent，特点与取舍见 [executors.md](references/executors.md)；判定模型与 API 的本机入口在 `$AGENTS_DATA_ROOT/local/apis.md`，直接调用，不经 `dispatch.sh`。
+
+选了 harness 时，本 skill 让当前调用方按**调用哲学**选出 `harness + model`，再在**本机 inventory**（`$AGENTS_DATA_ROOT/local/`）解析 `api` 并执行。profile、effort、搜索开关、权限、context 是运行参数，不属于 binding 身份。
 
 - 哲学与默认 effort/context：见 [models.md](references/models.md) 与 [runtime-defaults.tsv](references/runtime-defaults.tsv)（`dispatch.sh` 读同一张表）。
 - 本机通道与 registry：`$AGENTS_DATA_ROOT/local/`（模板 [local.example/](references/local.example/)）。它描述**跑 harness 的那台机器**；当前机器不是那台时（harness 不在 PATH），经该机器的 shell 桥执行 `dispatch.sh`，不要在当前机器照抄命令。
