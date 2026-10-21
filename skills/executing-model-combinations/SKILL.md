@@ -5,7 +5,7 @@ description: 给派工 agent 用：一件活交给谁——脚本、判定模型
 
 # 执行模型组合
 
-执行者有四类：脚本、判定模型、直接调用的 LLM API、harness 里的 agent，特点与取舍见 [executors.md](references/executors.md)；判定模型与 API 的本机入口在 `$AGENTS_DATA_ROOT/local/apis.md`，直接调用，不经 `dispatch.sh`。
+执行者有四类：脚本、判定模型、直接调用的 LLM API、harness 里的 agent，特点与取舍见 [executors.md](references/executors.md)；判定模型与 API 的本机入口在 `$AGENTS_DATA_ROOT/local/apis.md`，直接调用，不经 `dispatch.sh`；LLM API 用 `scripts/llm-call.py`（`--help` 看输入输出格式）。
 
 选了 harness 时，本 skill 让当前调用方按**调用哲学**选出 `harness + model`，再在**本机 inventory**（`$AGENTS_DATA_ROOT/local/`）解析 `api` 并执行。profile、effort、搜索开关、权限、context 是运行参数，不属于 binding 身份。
 
