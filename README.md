@@ -88,7 +88,7 @@ codex plugin add agents@agents-calling-philosophy
 ## 仓库里有什么
 
 - Skill: `skills/executing-model-combinations/`
-- Philosophy + defaults: `references/{overview,models,harnesses,runtime-defaults.tsv}`
+- Reference: `references/{overview,executors,models,harnesses}.md`
 - Wrappers: `scripts/`（含 `lib/data-root.sh`）
 - Empty overlay template: `references/local.example/`
 

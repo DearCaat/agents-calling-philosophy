@@ -1,0 +1,2 @@
+# model_glob	effort	context_tokens	autocompact
+# First match wins. Empty or - means harness default. Read by dispatch.sh when --effort is not given.

@@ -14,7 +14,13 @@ agents_apply_data_root
 BINDINGS_FILE="$LOCAL_ROOT/bindings.tsv"
 ADAPTERS_FILE="$LOCAL_ROOT/adapters.tsv"
 ROUTES_FILE="$LOCAL_ROOT/api-routes.tsv"
-DEFAULTS_FILE="$SKILL_DIR/references/runtime-defaults.tsv"
+DEFAULTS_FILE="$LOCAL_ROOT/runtime-defaults.tsv"
+# Machine wiring that is not a binding and not a secret (child proxy, dsh provider id).
+DISPATCH_ENV_FILE="$LOCAL_ROOT/dispatch.env"
+if [[ -r $DISPATCH_ENV_FILE ]]; then
+  # shellcheck source=/dev/null
+  source "$DISPATCH_ENV_FILE"
+fi
 
 LOGIN_HOME=$(getent passwd "${USER:-$(id -un)}" | cut -d: -f6)
 [[ -n ${LOGIN_HOME:-} && -d $LOGIN_HOME ]] || LOGIN_HOME=${HOME:-}
@@ -139,8 +145,8 @@ set_claude_default_models() {
   CLAUDE_DEFAULT_FABLE=$CLAUDE_MODEL
 }
 
-# Runtime defaults from portable references/runtime-defaults.tsv (first glob match).
-# Explicit --effort wins. Not binding identity. Context is calling philosophy.
+# Per-machine runtime defaults from local/runtime-defaults.tsv (first glob match).
+# Explicit --effort wins. Not binding identity. A missing file means harness defaults.
 lookup_runtime_defaults_row() {
   local model=$1
   [[ -r $DEFAULTS_FILE ]] || return 0
@@ -235,10 +241,6 @@ fi
 
 [[ -n $API && -n $HARNESS && -n $MODEL ]] || \
   die 'provide all of --api --harness --model'
-[[ $HARNESS != claude-old || $MODEL != grok-* ]] || \
-  die 'Grok must use harness=grok-build; claude-old Grok bindings are forbidden'
-[[ $HARNESS != claude-old || $MODEL != gemini* ]] || \
-  die 'Gemini must use harness=antigravity-cli; claude-old Gemini bindings are forbidden'
 mapfile -t MATCHES < <(binding_data | awk -F '\t' \
   -v api="$API" -v harness="$HARNESS" -v model="$MODEL" \
   '$1 == api && $2 == harness && $3 == model')
@@ -324,7 +326,8 @@ case $RESOLVED_HARNESS in
     IFS=$'\t' read -r _ADAPTER_API _ADAPTER_HARNESS _DSH_BASE_URL DSH_CRED_REF DSH_TOKEN_ENV \
       <<<"$DSH_ADAPTER_ROW"
     [[ -n $DSH_CRED_REF && -n $DSH_TOKEN_ENV ]] || die 'dsh adapter row missing credential_ref or token_env'
-    DSH_PROVIDER=${DSH_PROVIDER:-deepseek-official}
+    [[ -n ${DSH_PROVIDER:-} ]] || \
+      die "DSH_PROVIDER is not set (provider id from the user's dsh config; set it in $DISPATCH_ENV_FILE)"
     DISPLAY_COMMAND=(dsh --profile headless --patch '<model-patch>' - '<' "$PROMPT_FILE")
     ;;
   claude-old)
@@ -461,6 +464,14 @@ case $RESOLVED_HARNESS in
     AGY_MODEL=${SELECTOR#agy:}
     [[ -n $AGY_MODEL ]] || AGY_MODEL="$RESOLVED_MODEL"
     AGY_PRINT_TIMEOUT=${AGY_PRINT_TIMEOUT:-12h}
+    # Without an adapter row agy keeps its own login; with one it is pointed at that API.
+    AGY_BASE_URL=
+    if AGY_ADAPTER_ROW=$(lookup_adapter "$RESOLVED_API" antigravity-cli); then
+      IFS=$'\t' read -r _ADAPTER_API _ADAPTER_HARNESS AGY_BASE_URL AGY_CRED_REF AGY_TOKEN_ENV <<<"$AGY_ADAPTER_ROW"
+      [[ -n $AGY_CRED_REF && -n $AGY_TOKEN_ENV ]] || die 'antigravity-cli adapter row missing credential_ref or token_env'
+      [[ -n ${!AGY_CRED_REF:-} ]] || die "credentials file does not define required variable: $AGY_CRED_REF"
+      AGY_AUTH_TOKEN=${!AGY_CRED_REF}
+    fi
     COMMAND=(agy --model "$AGY_MODEL" --dangerously-skip-permissions --print-timeout "$AGY_PRINT_TIMEOUT")
     [[ -z $EFFORT ]] || COMMAND+=(--effort "$EFFORT")
     COMMAND+=(-p)
@@ -475,12 +486,10 @@ invoke() {
   local -a prefix=()
   ((TIMEOUT_SECONDS == 0)) || prefix=(timeout --signal=TERM --kill-after=5 "$TIMEOUT_SECONDS")
 
-  # Non-Claude child harnesses must NEVER inherit Claude Code dedicated 17890 (Japan 3x) proxy.
-  # Force reset to default system proxy (7890).
-  export HTTP_PROXY=http://127.0.0.1:7890
-  export HTTPS_PROXY=http://127.0.0.1:7890
-  export http_proxy=http://127.0.0.1:7890
-  export https_proxy=http://127.0.0.1:7890
+  # A child harness may need a different proxy than the caller's (local/dispatch.env).
+  if [[ -n ${CHILD_PROXY:-} ]]; then
+    export HTTP_PROXY=$CHILD_PROXY HTTPS_PROXY=$CHILD_PROXY http_proxy=$CHILD_PROXY https_proxy=$CHILD_PROXY
+  fi
   local direct_host
   direct_host=$(direct_only_host_for_api "$RESOLVED_API")
   if [[ -n $direct_host ]]; then
@@ -525,8 +534,10 @@ invoke() {
     antigravity-cli)
       (
         cd -- "$WORK_DIR"
-        [[ -n ${GEMINI_API_KEY:-} ]] || export GEMINI_API_KEY="${OPENAI_LOCAL_8317_TOKEN:?credentials.env must define OPENAI_LOCAL_8317_TOKEN}"
-        [[ -n ${GOOGLE_GEMINI_BASE_URL:-} ]] || export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:8317"
+        if [[ -n $AGY_BASE_URL ]]; then
+          export GOOGLE_GEMINI_BASE_URL="$AGY_BASE_URL"
+          export "$AGY_TOKEN_ENV=$AGY_AUTH_TOKEN"
+        fi
         "${prefix[@]}" "${COMMAND[@]}" "$(<"$PROMPT_FILE")"
       )
       ;;

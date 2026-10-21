@@ -192,8 +192,9 @@ EOF
 DISPATCH_ARGS=(--api "$RESOLVED_API" --harness "$RESOLVED_HARNESS" --model "$RESOLVED_MODEL" \
   --prompt-file "$PROMPT" --dir "$WORK_DIR" --out "$OUT" --stderr "$ERR" \
   --timeout-seconds "$TIMEOUT_SECONDS" --allow-state "$BINDING_STATE")
-# Minimal probe: do not inherit production effort defaults (luna max / grok high).
-[[ -n $EFFORT || $HARNESS == dsh ]] || EFFORT=low
+# Minimal probe: do not inherit production effort defaults. dsh takes no per-call
+# effort, and agy rejects --effort for some models (2026-10-21), so they get none.
+[[ -n $EFFORT || $HARNESS == dsh || $HARNESS == antigravity-cli ]] || EFFORT=low
 [[ -z $EFFORT ]] || DISPATCH_ARGS+=(--effort "$EFFORT")
 
 set +e
