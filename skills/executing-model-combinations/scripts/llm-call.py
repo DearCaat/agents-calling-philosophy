@@ -34,6 +34,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# Messages requires max_tokens. Set it high on purpose: thinking can run to tens of
+# thousands of tokens, and a low default would silently cut answers off.
+MESSAGES_MAX_TOKENS = 131072
 RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524, 529}
 
 
@@ -98,7 +101,7 @@ def build_body(item, a, system):
         if a.max_tokens:
             body['max_tokens'] = a.max_tokens
     else:
-        body = {'model': a.model, 'messages': msgs, 'max_tokens': a.max_tokens or 8192}
+        body = {'model': a.model, 'messages': msgs, 'max_tokens': a.max_tokens or MESSAGES_MAX_TOKENS}
         if system:
             block = {'type': 'text', 'text': system}
             if a.cache_system:
@@ -192,10 +195,13 @@ def run_one(item, a, ctx):
         try:
             r = post(ctx['opener'], ctx['url'], ctx['headers'], body, a.timeout)
             text, think, finish = extract(a.protocol, r)
-            if not (text or '').strip() and finish in ('length', 'max_tokens'):
-                # Reasoning models can spend the whole budget thinking; a retry would do the same.
-                rec.update(finish=finish, usage=r.get('usage'), tokens=norm_tokens(a.protocol, r.get('usage')),
-                           error='empty answer: output budget used up (finish=%s); raise --max-tokens' % finish)
+            if finish in ('length', 'max_tokens'):
+                # A cut-off answer is a failure, never a result; thinking often eats the whole budget.
+                # Retrying the same request would be cut off the same way.
+                tok = norm_tokens(a.protocol, r.get('usage'))
+                rec.update(text=text, reasoning=think, finish=finish, model=r.get('model'), usage=r.get('usage'),
+                           tokens=tok, error='truncated: output hit the token limit (finish=%s, output %d tokens, '
+                           'answer %s); raise --max-tokens' % (finish, tok['output'], 'empty' if not (text or '').strip() else 'partial'))
                 break
             if text is None:
                 raise Retry('no content in response: %s' % json.dumps(r, ensure_ascii=False)[:300])
@@ -251,7 +257,9 @@ def main():
                    help='OpenAI Chat Completions or Anthropic Messages; default follows the route')
     p.add_argument('--system-file', help='shared system prompt for every request')
     p.add_argument('--cache-system', action='store_true', help='messages protocol: mark the system prompt cache_control ephemeral')
-    p.add_argument('--max-tokens', type=int)
+    p.add_argument('--max-tokens', type=int,
+                   help='output limit including thinking; chat sends none unless set, messages defaults to %d. '
+                        'Hitting it is reported as a failure, not accepted' % MESSAGES_MAX_TOKENS)
     p.add_argument('--param', action='append', default=[], metavar='K=V',
                    help='extra body field, V parsed as JSON when possible (e.g. reasoning_effort=high, temperature=0)')
     p.add_argument('--json', action='store_true', help='parse the reply as JSON into "parsed"; unparseable counts as failed')
@@ -260,7 +268,9 @@ def main():
     p.add_argument('--warmup', type=int, default=2,
                    help='with -j > 1, run this many requests one by one first so the shared prefix gets cached (default 2)')
     p.add_argument('--attempts', type=int, default=6, help='tries per request on retryable errors (default 6)')
-    p.add_argument('--timeout', type=float, default=600, help='seconds per HTTP request (default 600)')
+    p.add_argument('--timeout', type=float, default=3600,
+                   help='seconds to wait for a response (default 3600); the reply arrives only when generation ends, '
+                        'so long thinking needs a long wait')
     p.add_argument('--stop-after-failures', type=int, default=10,
                    help='stop starting new requests after this many consecutive failed items (default 10)')
     p.add_argument('--dry-run', action='store_true', help='print the first request body and counts; no calls')
@@ -325,7 +335,7 @@ def main():
 
     ctx = {'opener': opener, 'url': url, 'headers': headers}
     lock, stop = threading.Lock(), threading.Event()
-    state = {'ok': 0, 'fail': 0, 'streak': 0, 'tok': {}}
+    state = {'ok': 0, 'fail': 0, 'streak': 0, 'tok': {}, 'models': {}, 'finish': {}}
     out = open(a.out, 'a', encoding='utf-8')
 
     def work(it):
@@ -335,6 +345,9 @@ def main():
         with lock:
             out.write(json.dumps(rec, ensure_ascii=False) + '\n')
             out.flush()
+            for key, v in (('models', rec.get('model')), ('finish', rec.get('finish'))):
+                if v is not None:
+                    state[key][v] = state[key].get(v, 0) + 1
             if rec['ok']:
                 state['ok'] += 1
                 state['streak'] = 0
@@ -360,6 +373,12 @@ def main():
     skipped = len(todo) - state['ok'] - state['fail']
     print('llm-call: ok %d, failed %d, not started %d, %.0fs; tokens %s'
           % (state['ok'], state['fail'], skipped, time.time() - t0, json.dumps(state['tok'])), file=sys.stderr)
+    # Settings that a route ignores do not error; show what came back so drift is visible.
+    print('llm-call: observed models %s; finish reasons %s'
+          % (json.dumps(state['models']), json.dumps(state['finish'])), file=sys.stderr)
+    if 'reasoning_effort' in a.param and a.protocol == 'chat' and state['ok'] and not state['tok'].get('reasoning'):
+        print('llm-call: warning: reasoning_effort was set but no reasoning tokens came back; check the route honours it',
+              file=sys.stderr)
     if stop.is_set():
         print('llm-call: stopped after %d consecutive failures; rerun the same command to resume' % a.stop_after_failures,
               file=sys.stderr)
