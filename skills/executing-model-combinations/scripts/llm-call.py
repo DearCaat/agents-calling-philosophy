@@ -9,6 +9,8 @@ optional per line: "system" (overrides --system-file), "params" (merged into the
 Each output line is one result, appended as soon as it finishes:
   id, ok, text, reasoning, parsed (--json), model (observed), tokens, usage (raw),
   finish, latency_s, attempts, error, fp.
+tokens.reasoning is null when the route does not report a thinking-token count (Messages
+usually does not); whether the model thought is then seen in "reasoning".
 Rerunning with the same --out skips ids whose last record is ok and whose request
 fingerprint (protocol + full body) is unchanged; failed or changed ids run again.
 
@@ -34,9 +36,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-# Messages requires max_tokens. Set it high on purpose: thinking can run to tens of
-# thousands of tokens, and a low default would silently cut answers off.
-MESSAGES_MAX_TOKENS = 131072
+# No output limit is sent unless --max-tokens is given, on either protocol: thinking can
+# run to tens of thousands of tokens and any default would cut some answers off. Routes
+# that insist on one (Anthropic's own API) reject the request with a 400, which is loud.
 RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524, 529}
 
 
@@ -101,7 +103,9 @@ def build_body(item, a, system):
         if a.max_tokens:
             body['max_tokens'] = a.max_tokens
     else:
-        body = {'model': a.model, 'messages': msgs, 'max_tokens': a.max_tokens or MESSAGES_MAX_TOKENS}
+        body = {'model': a.model, 'messages': msgs}
+        if a.max_tokens:
+            body['max_tokens'] = a.max_tokens
         if system:
             block = {'type': 'text', 'text': system}
             if a.cache_system:
@@ -127,7 +131,7 @@ def norm_tokens(protocol, u):
                 'reasoning': (u.get('completion_tokens_details') or {}).get('reasoning_tokens') or 0}
     return {'input': u.get('input_tokens') or 0, 'cache_read': u.get('cache_read_input_tokens') or 0,
             'cache_write': u.get('cache_creation_input_tokens') or 0, 'output': u.get('output_tokens') or 0,
-            'reasoning': (u.get('output_tokens_details') or {}).get('thinking_tokens') or 0}
+            'reasoning': (u.get('output_tokens_details') or {}).get('thinking_tokens')}
 
 
 def extract(protocol, r):
@@ -174,7 +178,8 @@ def post(opener, url, headers, body, timeout):
             ra = e.headers.get('retry-after')
             wait = float(ra) if ra and ra.replace('.', '', 1).isdigit() and float(ra) <= 120 else None
             raise Retry('HTTP %d %s' % (e.code, detail), wait)
-        raise RuntimeError('HTTP %d %s' % (e.code, detail))
+        hint = '; this route requires an output limit, pass --max-tokens' if 'max_tokens' in detail else ''
+        raise RuntimeError('HTTP %d %s%s' % (e.code, detail, hint))
     except (urllib.error.URLError, OSError) as e:
         raise Retry('network: %s' % e)
     try:
@@ -201,7 +206,7 @@ def run_one(item, a, ctx):
                 tok = norm_tokens(a.protocol, r.get('usage'))
                 rec.update(text=text, reasoning=think, finish=finish, model=r.get('model'), usage=r.get('usage'),
                            tokens=tok, error='truncated: output hit the token limit (finish=%s, output %d tokens, '
-                           'answer %s); raise --max-tokens' % (finish, tok['output'], 'empty' if not (text or '').strip() else 'partial'))
+                           'answer %s); raise --max-tokens, or drop it if set' % (finish, tok['output'], 'empty' if not (text or '').strip() else 'partial'))
                 break
             if text is None:
                 raise Retry('no content in response: %s' % json.dumps(r, ensure_ascii=False)[:300])
@@ -258,10 +263,12 @@ def main():
     p.add_argument('--system-file', help='shared system prompt for every request')
     p.add_argument('--cache-system', action='store_true', help='messages protocol: mark the system prompt cache_control ephemeral')
     p.add_argument('--max-tokens', type=int,
-                   help='output limit including thinking; chat sends none unless set, messages defaults to %d. '
-                        'Hitting it is reported as a failure, not accepted' % MESSAGES_MAX_TOKENS)
+                   help='output limit including thinking; none is sent unless set. '
+                        'Hitting it is reported as a failure, not accepted')
     p.add_argument('--param', action='append', default=[], metavar='K=V',
-                   help='extra body field, V parsed as JSON when possible (e.g. reasoning_effort=high, temperature=0)')
+                   help='extra body field, V parsed as JSON when possible (e.g. temperature=0). Thinking is switched on '
+                        'differently per protocol: chat reasoning_effort=high; messages thinking=\'{"type":"enabled"}\'. '
+                        'A field the route does not know is dropped without error')
     p.add_argument('--json', action='store_true', help='parse the reply as JSON into "parsed"; unparseable counts as failed')
     p.add_argument('--json-retries', type=int, default=1, help='re-asks when the reply is not JSON (default 1)')
     p.add_argument('-j', '--concurrency', type=int, default=4)
@@ -335,7 +342,7 @@ def main():
 
     ctx = {'opener': opener, 'url': url, 'headers': headers}
     lock, stop = threading.Lock(), threading.Event()
-    state = {'ok': 0, 'fail': 0, 'streak': 0, 'tok': {}, 'models': {}, 'finish': {}}
+    state = {'ok': 0, 'fail': 0, 'streak': 0, 'tok': {}, 'models': {}, 'finish': {}, 'thought': 0}
     out = open(a.out, 'a', encoding='utf-8')
 
     def work(it):
@@ -352,7 +359,10 @@ def main():
                 state['ok'] += 1
                 state['streak'] = 0
                 for k, v in rec['tokens'].items():
-                    state['tok'][k] = state['tok'].get(k, 0) + v
+                    if v is not None:
+                        state['tok'][k] = state['tok'].get(k, 0) + v
+                if rec.get('reasoning') or rec['tokens'].get('reasoning'):
+                    state['thought'] += 1
             else:
                 state['fail'] += 1
                 state['streak'] += 1
@@ -376,8 +386,12 @@ def main():
     # Settings that a route ignores do not error; show what came back so drift is visible.
     print('llm-call: observed models %s; finish reasons %s'
           % (json.dumps(state['models']), json.dumps(state['finish'])), file=sys.stderr)
-    if 'reasoning_effort' in a.param and a.protocol == 'chat' and state['ok'] and not state['tok'].get('reasoning'):
-        print('llm-call: warning: reasoning_effort was set but no reasoning tokens came back; check the route honours it',
+    print('llm-call: %d of %d ok results show thinking' % (state['thought'], state['ok']), file=sys.stderr)
+    if a.protocol == 'messages' and 'reasoning_effort' in a.param and 'thinking' not in a.param:
+        print('llm-call: warning: reasoning_effort is a chat field; Messages routes drop it silently. '
+              'Use --param thinking=\'{"type":"enabled"}\'', file=sys.stderr)
+    elif ({'reasoning_effort', 'thinking'} & set(a.param)) and state['ok'] and not state['thought']:
+        print('llm-call: warning: thinking was requested but no result shows any; check the route honours it',
               file=sys.stderr)
     if stop.is_set():
         print('llm-call: stopped after %d consecutive failures; rerun the same command to resume' % a.stop_after_failures,
