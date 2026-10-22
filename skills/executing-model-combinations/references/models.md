@@ -59,7 +59,7 @@
 - 身份：厂商 ID 为 `gemini-3.8-flash`（`official`，[Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)）。网关上可能另有带 thinking 档后缀的 slug，与厂商 ID 不能当成可以互换。
 - 公开能力：context 1,048,576、最大输出 65,536；thinking 档 low/medium/high（默认 medium）；输入 text/image/video/audio/PDF，输出 text（`official`）。
 - 模型官方参考成本：至 2026-12-31 为 input `$0.75` / output `$3.75`（含 thinking tokens）/ 1M；2027-01-01 起翻倍（`official`，[Gemini API Pricing](https://ai.google.dev/gemini-api/docs/pricing)）。
-- 能力与局限：世界知识与专业知识好于其它 flash，成本同档（`local-experience`）；论文存在性大体可靠，但引句、DOI、机构、日期会编，引用要回原文核（`local-test`）。
+- 能力与局限：世界知识与专业知识好于其它 flash，成本同档（`local-experience`）；论文存在性大体可靠，但引句、DOI、机构、日期会编，引用要回原文核（`local-test`）；让它只回段落编号，引句由脚本从原文截取。
 
 ## Claude aliases
 

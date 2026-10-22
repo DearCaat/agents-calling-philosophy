@@ -79,6 +79,8 @@ codex exec resume "$SESSION_ID" -o "$LAST_MESSAGE" - <"$FOLLOWUP_FILE"
 codex exec fork "$SESSION_ID" -o "$LAST_MESSAGE" - <"$FORK_PROMPT_FILE"
 ```
 
+无头 `codex exec` 挂 MCP 时加 `-c 'mcp_servers.<name>.default_tools_approval_mode="approve"'`，否则工具调用卡在审批；不用 stdin 时 `</dev/null`。长文本产物让它作最终消息，由 `-o` 接住。
+
 resume/fork 从原 cwd 启动，不再传新会话的 profile 或 `-C`。外部并行且不需要内部 fan-out 时，可在新会话命令中加入：
 
 ```bash
@@ -121,6 +123,7 @@ DEEPSEEK_API_KEY=... dsh --profile headless --patch "$PATCH" - <"$PROMPT_FILE" >
 - provider 的 key 环境变量必须非空：为空时 dsh 会回退读工作目录的 `.env`。
 - stdout 只有最终文本，reasoning 与诊断进 stderr；`--json` 输出 JSONL 事件（不含模型名）。退出码 0 表示最后一轮完成。
 - dsh 自带 `dsh-llm-retry`；`dispatch.sh` 不在其外层再重试。
+- 长会话会丢任务说明：basic compaction 按估计 token 触发，阈值 = min(0.8×窗口, 窗口−maxTokens−65536)，300K 窗口、128K maxTokens 时约 106K；压缩连首条消息一起压掉，没有置顶保护（`local-test`）。任务说明在首条消息里的长任务，把 maxTokens 降到 64K 并禁用 compaction-basic，或拆成短会话。
 
 ## Grok Build
 
@@ -155,6 +158,13 @@ grok --cwd "$DIR" --resume "$SESSION_ID" --fork-session -p "创建分支"
 managed 路径的会话命令在上述命令前保留 `GROK_HOME="$PLUGIN_ROOT/private/runtime/grok-home/.grok"`。
 
 支持 `--sandbox`、`--permission-mode`、allow/deny、`--agent/--agents` 与 `--no-subagents`。当前 config 的 `compact_mode=false` 是 UI 配置，不能据此推断上下文压缩策略。
+
+## 各 harness 共有的坑
+
+- 工具输出会被截断，worker 不察觉：codex 截中段（`…N tokens truncated…`），agy 截头留尾（`<truncated N lines>`）；它会对没看到的内容照判、编值。输入按小块给；归因前先查会话记录里它实际看到了什么（codex rollout 在 `~/.codex/sessions/YYYY/MM/DD/rollout-*<id>.jsonl`，exec 是 `custom_tool_call`、命令在 `input`）。
+- 判定、核查类 worker 各自在独立空目录跑：共享目录里它们会翻别的 run 的输出照抄（本机 221/438 个 judge 读了别人的结果，`local-test`）。材料内联进 prompt，输出写绝对路径，同轮各臂、各数据集互不可见；事后扫会话记录查越界。agy 的相对路径落在 `~/.gemini/antigravity-cli/scratch/`。
+- 杀进程按 pid 或进程组；`pkill -f <prompt 文件名>` 会连调用方自己的 shell wrapper 一起匹配上。
+- 产物在进程退出后还可能被改写一次，采用前重新比对 sha256。
 
 ## 凭据与协议边界
 
