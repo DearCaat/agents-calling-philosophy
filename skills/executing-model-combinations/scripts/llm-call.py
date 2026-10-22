@@ -18,6 +18,19 @@ Stable content (instructions, rubric, shared context) belongs in the system prom
 or at the start of the messages so that provider prefix caching can reuse it across
 requests; the per-item part goes last.
 
+Prefix caches live in each upstream (and account), so requests that share a prefix
+should reach the same one. Requests carry an X-Session-ID that a gateway can stick to:
+by default a hash of the request's system prompt, so one batch shares one id; set
+--session-id for multi-turn work whose shared prefix is in the messages. Requests
+without a system prompt and without --session-id carry none.
+
+Requests stream by default, so a stalled upstream is caught by --idle-timeout instead of
+waiting out the whole response, and --think-limit can stop a thinking loop as it happens.
+A timeout that arrives after minutes of waiting (HTTP 408/504/524, or no reply within
+--timeout) is not resent: the same request would wait out the same limit again. A
+thinking runaway (output limit hit with an empty answer, or --think-limit passed) is
+resent once on the same route (--runaway-retries); it is usually a one-off.
+
 Standard library only. The route comes from --api (resolved in the local
 api-routes.tsv, credential read from the private credentials file and never
 printed) or from --base-url with --key-env.
@@ -40,6 +53,11 @@ import urllib.request
 # run to tens of thousands of tokens and any default would cut some answers off. Routes
 # that insist on one (Anthropic's own API) reject the request with a 400, which is loud.
 RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524, 529}
+# 10-22: pj-lab returned 504 after ~560s to the same request five times in a row (46 min).
+TIMEOUT_STATUS = {408, 504, 524}
+LATE_S = 120
+# Streamed thinking is counted in characters; ~3 per token (DeepSeek: 462772 chars for 128000 tokens).
+CHARS_PER_TOKEN = 3
 
 
 def die(msg):
@@ -167,13 +185,99 @@ class Retry(Exception):
         self.wait = wait
 
 
-def post(opener, url, headers, body, timeout):
+class Runaway(Exception):
+    pass
+
+
+def late(t0, what):
+    return RuntimeError('%s after %ds; not resent, the same request would wait out the same limit again '
+                        '(try a faster route, or a smaller task)' % (what, time.time() - t0))
+
+
+def read_stream(resp, protocol, a, t0):
+    """Rebuild a non-streaming response body from server-sent events."""
+    text, think, finish, model, usage, nthink, started = [], [], None, None, {}, 0, False
+    for raw in resp:
+        if time.time() - t0 > a.timeout:
+            raise late(t0, 'no result within --timeout')
+        line = raw.decode('utf-8', 'replace').strip()
+        if not line.startswith('data:'):
+            continue
+        data = line[5:].strip()
+        if data == '[DONE]':
+            break
+        try:
+            ev = json.loads(data)
+        except ValueError:
+            continue
+        if ev.get('error') or ev.get('type') == 'error':
+            raise Retry('error in stream: %s' % json.dumps(ev.get('error') or ev, ensure_ascii=False)[:300])
+        if protocol == 'chat':
+            model = ev.get('model') or model
+            usage = ev.get('usage') or usage
+            for c in ev.get('choices') or []:
+                d = c.get('delta') or {}
+                if d.get('content'):
+                    text.append(d['content'])
+                r = d.get('reasoning_content') or d.get('reasoning')
+                if r:
+                    think.append(r)
+                    nthink += len(r)
+                finish = c.get('finish_reason') or finish
+        else:
+            t = ev.get('type')
+            if t == 'message_start':
+                m = ev.get('message') or {}
+                model = m.get('model')
+                usage.update(m.get('usage') or {})
+            elif t == 'content_block_start':
+                started = True
+                b = ev.get('content_block') or {}
+                if b.get('type') == 'text':
+                    text.append(b.get('text') or '')
+            elif t == 'content_block_delta':
+                d = ev.get('delta') or {}
+                if d.get('type') == 'text_delta':
+                    text.append(d.get('text') or '')
+                elif d.get('type') == 'thinking_delta':
+                    think.append(d.get('thinking') or '')
+                    nthink += len(d.get('thinking') or '')
+            elif t == 'message_delta':
+                finish = (ev.get('delta') or {}).get('stop_reason') or finish
+                usage.update(ev.get('usage') or {})
+            elif t == 'message_stop':
+                break
+        if a.think_limit and nthink > a.think_limit * CHARS_PER_TOKEN:
+            raise Runaway('thinking passed --think-limit %d (~%d tokens streamed, no answer yet: %s)'
+                          % (a.think_limit, nthink // CHARS_PER_TOKEN, 'yes' if text else 'no'))
+    if finish is None:
+        raise Retry('stream ended without a finish reason')
+    if protocol == 'chat':
+        msg = {'content': ''.join(text), 'reasoning_content': ''.join(think) or None}
+        return {'model': model, 'choices': [{'message': msg, 'finish_reason': finish}], 'usage': usage}
+    blocks = ([{'type': 'thinking', 'thinking': ''.join(think)}] if think else []) + \
+             ([{'type': 'text', 'text': ''.join(text)}] if text or started else [])
+    return {'model': model, 'content': blocks, 'stop_reason': finish, 'usage': usage}
+
+
+def post(opener, url, headers, body, a):
+    stream = not a.no_stream
+    if stream:
+        body = dict(body, stream=True)
+        if a.protocol == 'chat':
+            body['stream_options'] = {'include_usage': True}
     q = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers)
+    t0 = time.time()
     try:
-        with opener.open(q, timeout=timeout) as resp:
+        # The socket timeout applies to each read: with streaming it is the idle limit.
+        with opener.open(q, timeout=a.idle_timeout if stream else a.timeout) as resp:
+            if stream:
+                return read_stream(resp, a.protocol, a, t0)
             raw = resp.read()
     except urllib.error.HTTPError as e:
         detail = e.read()[:300].decode('utf-8', 'replace')
+        if e.code in TIMEOUT_STATUS and time.time() - t0 > LATE_S:
+            raise late(t0, 'HTTP %d' % e.code)
         if e.code in RETRY_STATUS:
             ra = e.headers.get('retry-after')
             wait = float(ra) if ra and ra.replace('.', '', 1).isdigit() and float(ra) <= 120 else None
@@ -181,7 +285,10 @@ def post(opener, url, headers, body, timeout):
         hint = '; this route requires an output limit, pass --max-tokens' if 'max_tokens' in detail else ''
         raise RuntimeError('HTTP %d %s%s' % (e.code, detail, hint))
     except (urllib.error.URLError, OSError) as e:
-        raise Retry('network: %s' % e)
+        if not stream and 'timed out' in str(e) and time.time() - t0 > LATE_S:
+            raise late(t0, 'no reply within --timeout')
+        raise Retry('network: %s%s' % (e, ' (nothing for --idle-timeout %ds)' % a.idle_timeout
+                                       if stream and 'timed out' in str(e) else ''))
     try:
         r = json.loads(raw)
     except ValueError:
@@ -194,19 +301,25 @@ def post(opener, url, headers, body, timeout):
 def run_one(item, a, ctx):
     body, fp = item['_body'], item['_fp']
     rec = {'id': item['id'], 'ok': False, 'api': a.api, 'protocol': a.protocol, 'requested_model': a.model, 'fp': fp}
-    t0, attempt, json_left = time.time(), 0, a.json_retries
+    t0, attempt, json_left, runaway_left = time.time(), 0, a.json_retries, a.runaway_retries
     while True:
         attempt += 1
         try:
-            r = post(ctx['opener'], ctx['url'], ctx['headers'], body, a.timeout)
+            headers = dict(ctx['headers'], **({'X-Session-ID': item['_sid']} if item['_sid'] else {}))
+            r = post(ctx['opener'], ctx['url'], headers, body, a)
             text, think, finish = extract(a.protocol, r)
             if finish in ('length', 'max_tokens'):
                 # A cut-off answer is a failure, never a result; thinking often eats the whole budget.
-                # Retrying the same request would be cut off the same way.
+                # With a partial answer the limit is too small and a resend is cut off the same way;
+                # with an empty one it is usually a thinking loop (10-22: 1 of 8 identical calls).
                 tok = norm_tokens(a.protocol, r.get('usage'))
+                empty = not (text or '').strip()
                 rec.update(text=text, reasoning=think, finish=finish, model=r.get('model'), usage=r.get('usage'),
                            tokens=tok, error='truncated: output hit the token limit (finish=%s, output %d tokens, '
-                           'answer %s); raise --max-tokens, or drop it if set' % (finish, tok['output'], 'empty' if not (text or '').strip() else 'partial'))
+                           'answer %s); raise --max-tokens, or drop it if set' % (finish, tok['output'], 'empty' if empty else 'partial'))
+                if empty and runaway_left > 0 and attempt < a.attempts:
+                    runaway_left -= 1
+                    continue
                 break
             if text is None:
                 raise Retry('no content in response: %s' % json.dumps(r, ensure_ascii=False)[:300])
@@ -228,6 +341,12 @@ def run_one(item, a, ctx):
             if attempt >= a.attempts:
                 break
             time.sleep(e.wait if e.wait is not None else min(2 * 2 ** (attempt - 1), 60) * (0.75 + 0.5 * random.random()))
+        except Runaway as e:
+            rec['error'] = 'runaway: %s' % e
+            if runaway_left > 0 and attempt < a.attempts:
+                runaway_left -= 1
+                continue
+            break
         except RuntimeError as e:
             rec['error'] = str(e)
             break
@@ -261,6 +380,7 @@ def main():
     p.add_argument('--protocol', choices=['chat', 'messages'],
                    help='OpenAI Chat Completions or Anthropic Messages; default follows the route')
     p.add_argument('--system-file', help='shared system prompt for every request')
+    p.add_argument('--session-id', help="X-Session-ID for every request (default: hash of each request's system prompt)")
     p.add_argument('--cache-system', action='store_true', help='messages protocol: mark the system prompt cache_control ephemeral')
     p.add_argument('--max-tokens', type=int,
                    help='output limit including thinking; none is sent unless set. '
@@ -276,8 +396,17 @@ def main():
                    help='with -j > 1, run this many requests one by one first so the shared prefix gets cached (default 2)')
     p.add_argument('--attempts', type=int, default=6, help='tries per request on retryable errors (default 6)')
     p.add_argument('--timeout', type=float, default=3600,
-                   help='seconds to wait for a response (default 3600); the reply arrives only when generation ends, '
-                        'so long thinking needs a long wait')
+                   help='seconds one attempt may take in total (default 3600); long thinking needs a long wait')
+    p.add_argument('--idle-timeout', type=float, default=180,
+                   help='streaming: seconds with no data before the attempt is dropped and resent (default 180)')
+    p.add_argument('--no-stream', action='store_true',
+                   help='wait for the whole response instead (for routes that cannot stream); '
+                        '--idle-timeout and --think-limit then do not apply')
+    p.add_argument('--think-limit', type=int, default=0, metavar='TOKENS',
+                   help='streaming: stop an attempt once its thinking passes about this many tokens '
+                        '(counted as %d characters each; default 0 = no limit)' % CHARS_PER_TOKEN)
+    p.add_argument('--runaway-retries', type=int, default=1,
+                   help='resends on the same route after a thinking runaway (default 1)')
     p.add_argument('--stop-after-failures', type=int, default=10,
                    help='stop starting new requests after this many consecutive failed items (default 10)')
     p.add_argument('--dry-run', action='store_true', help='print the first request body and counts; no calls')
@@ -329,12 +458,15 @@ def main():
         seen.add(it['id'])
         it['_body'] = build_body(it, a, system)
         it['_fp'] = fingerprint(a.protocol, it['_body'])
+        sys_used = it.get('system', system)
+        it['_sid'] = a.session_id or ('llm-call-' + hashlib.sha256(sys_used.encode()).hexdigest()[:16] if sys_used else None)
         items.append(it)
 
     done = load_done(a.out)
     todo = [it for it in items if done.get(it['id']) != it['_fp']]
-    print('llm-call: %d items, %d already done, %d to run; %s %s via %s'
-          % (len(items), len(items) - len(todo), len(todo), a.protocol, a.model, a.api or base), file=sys.stderr)
+    print('llm-call: %d items, %d already done, %d to run; %s %s via %s; %d session ids'
+          % (len(items), len(items) - len(todo), len(todo), a.protocol, a.model, a.api or base,
+             len({it['_sid'] for it in items if it['_sid']})), file=sys.stderr)
     if a.dry_run:
         if todo:
             print(json.dumps(todo[0]['_body'], ensure_ascii=False, indent=1))

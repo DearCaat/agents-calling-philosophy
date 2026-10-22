@@ -22,7 +22,7 @@ description: 给要把活交出去的 agent 用的参考手册：四类执行者
 
 1. 用户的口语名先还原成 `harness + model`（别名见下表），再查 `local/bindings.tsv`（或 `scripts/dispatch.sh --list-bindings`）。
 2. `verified` 直接执行。`configured` 先用 `scripts/verify.sh` 跑最小探针，通过才晋级。没有命中就报告缺口，不换成邻近的组合：换了，用户以为跑的是 A，实际跑的是 B，结果和成本都对不上。
-3. 同一 `harness + model` 有多条通道时，`bindings.tsv` 的行序就是本机所有者定的通道优先级：取最靠前的 `verified` 行。出错、额度用完、或慢到拖住任务时换下一条，用户点名某条时用那条；墙钟和 token 一样是成本，不为守行序干等。下一条免费就直接换，收费的先问用户，因为换通道可能同时换了计费。换了就在交还里写明从哪条换到哪条、为什么，并分列请求模型与回包模型，因为模型版本也可能跟着变。
+3. 同一 `harness + model` 有多条通道时，`bindings.tsv` 的行序就是本机所有者定的通道优先级：取最靠前的 `verified` 行。出错、额度用完、或慢到拖住任务时换下一条，用户点名某条时用那条；墙钟和 token 一样是成本，不为守行序干等。思考失控（写满上限、答案为空）是那一次的事，不算通道出错，先在原通道重发，`llm-call.py` 默认重发一次。下一条免费就直接换，收费的先问用户，因为换通道可能同时换了计费。换了就在交还里写明从哪条换到哪条、为什么，并分列请求模型与回包模型，因为模型版本也可能跟着变。
 4. 调用前查 `local/apis.md` 的免费段。免费按"通道＋模型"判，同一通道上不同模型的价格可以不同。
 5. 入口：harness 用 `scripts/dispatch.sh`（单条）或 `scripts/parallel.sh`（JSONL 批量）；LLM API 用 `scripts/llm-call.py`；判定模型见 `local/apis.md` 的 jev 段；新组合晋级用 `scripts/verify.sh`。effort/context 未指定时，`dispatch.sh` 按 `local/runtime-defaults.tsv` 补；native sub-agent 要自己带。
 
