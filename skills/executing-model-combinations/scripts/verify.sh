@@ -194,7 +194,7 @@ DISPATCH_ARGS=(--api "$RESOLVED_API" --harness "$RESOLVED_HARNESS" --model "$RES
   --timeout-seconds "$TIMEOUT_SECONDS" --allow-state "$BINDING_STATE")
 # Minimal probe: do not inherit production effort defaults. dsh takes no per-call
 # effort, and agy rejects --effort for some models (2026-10-21), so they get none.
-[[ -n $EFFORT || $HARNESS == dsh || $HARNESS == antigravity-cli ]] || EFFORT=low
+[[ -n $EFFORT || $HARNESS == dsh || $HARNESS == antigravity-cli || $HARNESS == agy-min ]] || EFFORT=low
 [[ -z $EFFORT ]] || DISPATCH_ARGS+=(--effort "$EFFORT")
 
 set +e
@@ -218,6 +218,7 @@ case $RESOLVED_HARNESS in
   claude-old) ENTRYPOINT='claude_old -p' ;;
   dsh) ENTRYPOINT='dsh --profile headless' ;;
   antigravity-cli) ENTRYPOINT='agy -p' ;;
+  agy-min) ENTRYPOINT='agy-min -p' ;;
 esac
 
 PROBE_TEXT=$(extract_probe_text "$OUT" "$RESOLVED_HARNESS" | normalize_probe_text)

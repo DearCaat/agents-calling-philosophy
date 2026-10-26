@@ -21,6 +21,7 @@ set +a
 | `dsh` | `dsh`（DeepSeek Harness；交互版 `dst` = dsh-tui，不能脚本化） | `--profile headless`，`-` 读 stdin | 每次新 session；`--session-id` 可接续 | basic compaction：auto、threshold 0.8、retain 0.16、summary 8192 | 默认 workspace-write + ask；内建 retry；subagent maxDepth 3；parallel tool calls 默认 10 |
 | `grok-build` | PATH 上的 `grok` | prompt / prompt-file | continue/resume/fork | 精确上下文压缩行为未核实 | sandbox、permission mode、subagents；数值并发未核实 |
 | `antigravity-cli` | PATH 上的 `agy` | `-p/--print` | continue/conversation | 上下文超限由 CLI 内部自动处理 | sandbox/dangerously-skip-permissions、MCP、subagent |
+| `agy-min` | PATH 上的 `agy-min`（本机启动器，见 `local/harnesses.md`） | `-p/--print` | 同 `antigravity-cli`，会话在隔离 HOME 里 | 同 `antigravity-cli` | 同 `antigravity-cli`，agent 固定为 `mini` |
 
 ## 选择时可比较的 harness 特点
 
@@ -31,11 +32,12 @@ set +a
 - `claude-old`：支持 continue/resume/fork、`--autocompact` 与 permission/tool 参数。压缩较好，长程任务较稳（`local-experience`）；这不证明当前本地代理的 alias 对应某个 Claude 上游模型，也不代表每类任务更强。
 - `dsh`：有原生 retry 和内部 subagent/parallel tool-call 能力。headless 没有逐次 `--model`/`--effort`；`dispatch.sh` 每次写一个一次性 `--patch` 覆盖 `agent-default-model` 来选模型，effort 不逐次传。cwd 取进程当前目录。preset（如 minimal）与 profile 是两层：preset 由 api-session-controller 在创建会话时挂载（web profile 加载它），headless runner 不经过它，所以 headless 下设默认 preset 不生效。要在 headless 用 minimal 的工具面，把 minimal 的插件表平铺成 `--patch`（覆盖已有行用 `- id:`，新增行如 MCP 工具用 `- insert:`）。
 - `grok-build`：支持 session continue/resume/fork、sandbox 与 subagents；当前模型压缩行为和数值并发未核实，且已有请求 model 与 observed model 漂移的事实。需要精确复现时必须记录两者。
-- `antigravity-cli`：入口为 PATH 上的 `agy`，Google Antigravity 原生 CLI。支持 `-p/--print`、`--model`、`--effort`、`--continue`、`--dangerously-skip-permissions`。可直连网关或 Gemini API，能联网，原生大上下文吞吐与多 Agent 编排速度快。`-p` 原生默认 5 分钟超时，到点可能带着半截输出 exit 0（`dispatch.sh` 默认传 12h）；对部分模型不接受 `--effort`。
+- `antigravity-cli`：入口为 PATH 上的 `agy`，Google Antigravity 原生 CLI。支持 `-p/--print`、`--model`、`--effort`、`--continue`、`--dangerously-skip-permissions`。可直连网关或 Gemini API，能联网，原生大上下文吞吐与多 Agent 编排速度快。`-p` 原生默认 5 分钟超时，到点可能带着半截输出 exit 0（`dispatch.sh` 默认传 12h）；对部分模型不接受 `--effort`。经网关时，上下文压缩靠网关模型列表里的 `inputTokenLimit`：用 `AGY_LLM_GATEWAY_MODELS` 静态列表时上限是 0，`/compact` 和自动压缩报 `summaryRequestMaxTokens ... is non-positive (modelMaxInputTokens=0, ...)`，长会话会停在这里；不设该变量、让 agy 从网关发现模型即可（agy 1.4.7，2026-10-26 local-test）。
+- `agy-min`：本机给 agy 写的最小启动器，不改 agy 二进制。它隔离 HOME（不带对话历史、brain、技能目录），用一个只有一句 system prompt 的自定义 agent，经网关调用；参数与 `antigravity-cli` 相同。请求仍由 agy 生成，system 约为原版 agy 的一半（10-25 实测 6479 对 14572 字节，`local-test`）。要像调 API 一样、尽量少受 harness 影响地用 Gemini 时用它。
 
 ## 厚薄
 
-最薄的是 dsh 套 minimal 工具面，基本只有模型加少量工具（headless 下要平铺成 `--patch`，见上文 dsh 条）；dsh 默认 profile 多了内建 retry、subagent 和并行工具调用；`codex-cli`、`claude-old`、`grok-build`、`antigravity-cli` 是成熟的厚 harness，有压缩、子代理、沙箱和会话续用。厚薄的取舍见 [executors.md](executors.md)。
+最薄的是 dsh 套 minimal 工具面，基本只有模型加少量工具（headless 下要平铺成 `--patch`，见上文 dsh 条）；dsh 默认 profile 多了内建 retry、subagent 和并行工具调用；`codex-cli`、`claude-old`、`grok-build`、`antigravity-cli` 是成熟的厚 harness，有压缩、子代理、沙箱和会话续用；`agy-min` 是去掉历史与多余 system 段的 agy，工具与请求格式仍由 agy 决定。厚薄的取舍见 [executors.md](executors.md)。
 
 ## Codex native sub-agent
 

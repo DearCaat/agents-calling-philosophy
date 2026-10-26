@@ -16,7 +16,7 @@
 |---|---|---|
 | GPT | Codex（在 Codex 宿主内用 `spawn_agent`，外部用 `codex-cli`） | Codex 是 OpenAI 自家 harness，走 Responses 协议；宿主内派 child 不经 wrapper，共享工作区 |
 | Grok | `grok-build` | xAI 自家 CLI；经 `claude-old` 承载时，`claude-old` 不认 grok 的模型名，本机实测不通（`local-test`） |
-| Gemini | `antigravity-cli`；需要输出约束时也可用 `codex-cli` | agy 是 Google 自家 CLI，能联网，长上下文吞吐快；经 `claude-old` 承载时本机最小探针多次失败（超时、上游 429，`local-test`）；`codex-cli` 经网关能跑，可用 `--output-schema` 约束输出 |
+| Gemini | `antigravity-cli`；要像调 API 一样、少受 harness 影响时用 `agy-min` | agy 是 Google 自家 CLI，能联网，长上下文吞吐快。本机 Gemini 走 Google 账号订阅，只能由 agy 自己发请求（账号安全，2026-10-25 文浩定），网关拒绝其他客户端，所以 `codex-cli`、`claude-old`、`llm-call.py` 都不用于 Gemini；本机规定见 `local/apis.md` |
 | DeepSeek | `dsh`，其次 `codex-cli` | dsh 是 DeepSeek 自家 harness，向 provider 说 Anthropic Messages，只认 Messages 的通道也能接；`codex-cli` 要求通道支持 Responses 协议（2026-10-19 文浩定此顺序） |
 | GLM | `dsh` | 同上：dsh 能接只认 Messages 的通道；本机 glm 所在通道 codex 接不上，`claude-old` 被上游拒绝（`local-test`，见 `local/harnesses.md`） |
 | Claude | Claude Code（`claude-old`） | Anthropic 自家 harness；本机 `claude-old` 也用来承载走 Messages 协议的其他模型 |

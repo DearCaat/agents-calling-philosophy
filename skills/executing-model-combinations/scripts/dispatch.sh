@@ -379,12 +379,15 @@ case $RESOLVED_HARNESS in
     [[ -z $EFFORT ]] || DISPLAY_COMMAND+=(--reasoning-effort "$EFFORT")
     DISPLAY_COMMAND+=(--output-format json --prompt-file "$PROMPT_FILE")
     ;;
-  antigravity-cli)
+  antigravity-cli|agy-min)
     AGY_MODEL=${SELECTOR#agy:}
     [[ -n $AGY_MODEL ]] || AGY_MODEL="$RESOLVED_MODEL"
     # agy -p CLI default --print-timeout is 5m; local-experience: too short. Wrapper default 12h.
     AGY_PRINT_TIMEOUT=${AGY_PRINT_TIMEOUT:-12h}
-    DISPLAY_COMMAND=(agy --model "$AGY_MODEL")
+    # agy-min is the minimal agy launcher and takes the same arguments.
+    AGY_ENTRY=agy
+    [[ $RESOLVED_HARNESS == antigravity-cli ]] || AGY_ENTRY=agy-min
+    DISPLAY_COMMAND=("$AGY_ENTRY" --model "$AGY_MODEL")
     [[ -z $EFFORT ]] || DISPLAY_COMMAND+=(--effort "$EFFORT")
     DISPLAY_COMMAND+=(--dangerously-skip-permissions --print-timeout "$AGY_PRINT_TIMEOUT" -p '<' "$PROMPT_FILE")
     ;;
@@ -461,22 +464,24 @@ case $RESOLVED_HARNESS in
     COMMAND+=(--output-format json --prompt-file "$PROMPT_FILE")
     command -v grok >/dev/null 2>&1 || die 'executable not found: grok'
     ;;
-  antigravity-cli)
+  antigravity-cli|agy-min)
     AGY_MODEL=${SELECTOR#agy:}
     [[ -n $AGY_MODEL ]] || AGY_MODEL="$RESOLVED_MODEL"
     AGY_PRINT_TIMEOUT=${AGY_PRINT_TIMEOUT:-12h}
+    AGY_ENTRY=agy
+    [[ $RESOLVED_HARNESS == antigravity-cli ]] || AGY_ENTRY=agy-min
     # Without an adapter row agy keeps its own login; with one it is pointed at that API.
     AGY_BASE_URL=
-    if AGY_ADAPTER_ROW=$(lookup_adapter "$RESOLVED_API" antigravity-cli); then
+    if AGY_ADAPTER_ROW=$(lookup_adapter "$RESOLVED_API" "$RESOLVED_HARNESS"); then
       IFS=$'\t' read -r _ADAPTER_API _ADAPTER_HARNESS AGY_BASE_URL AGY_CRED_REF AGY_TOKEN_ENV <<<"$AGY_ADAPTER_ROW"
-      [[ -n $AGY_CRED_REF && -n $AGY_TOKEN_ENV ]] || die 'antigravity-cli adapter row missing credential_ref or token_env'
+      [[ -n $AGY_CRED_REF && -n $AGY_TOKEN_ENV ]] || die "$RESOLVED_HARNESS adapter row missing credential_ref or token_env"
       [[ -n ${!AGY_CRED_REF:-} ]] || die "credentials file does not define required variable: $AGY_CRED_REF"
       AGY_AUTH_TOKEN=${!AGY_CRED_REF}
     fi
-    COMMAND=(agy --model "$AGY_MODEL" --dangerously-skip-permissions --print-timeout "$AGY_PRINT_TIMEOUT")
+    COMMAND=("$AGY_ENTRY" --model "$AGY_MODEL" --dangerously-skip-permissions --print-timeout "$AGY_PRINT_TIMEOUT")
     [[ -z $EFFORT ]] || COMMAND+=(--effort "$EFFORT")
     COMMAND+=(-p)
-    command -v agy >/dev/null 2>&1 || die 'executable not found: agy'
+    command -v "$AGY_ENTRY" >/dev/null 2>&1 || die "executable not found: $AGY_ENTRY"
     ;;
 esac
 
@@ -535,10 +540,13 @@ invoke() {
       ) <"$PROMPT_FILE"
       ;;
     grok-build) "${prefix[@]}" "${COMMAND[@]}" ;;
-    antigravity-cli)
+    antigravity-cli|agy-min)
       (
         cd -- "$WORK_DIR"
         if [[ -n $AGY_BASE_URL ]]; then
+          # agy 1.4 reads AGY_LLM_GATEWAY_*; agy-min takes its gateway from AGY_MIN_CPA_URL.
+          export AGY_LLM_GATEWAY_URL="$AGY_BASE_URL" AGY_LLM_GATEWAY_API_KEY="$AGY_AUTH_TOKEN"
+          export AGY_MIN_CPA_URL="$AGY_BASE_URL"
           export GOOGLE_GEMINI_BASE_URL="$AGY_BASE_URL"
           export "$AGY_TOKEN_ENV=$AGY_AUTH_TOKEN"
         fi

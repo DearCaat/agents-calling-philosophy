@@ -30,13 +30,14 @@ description: 给要把活交出去的 agent 用的参考手册：四类执行者
 |---|---|
 | cc | harness `claude-old`，不是模型名 |
 | agy | harness `antigravity-cli` |
+| agy-min | harness `agy-min`：agy 的最小启动器，像调 API 一样用 Gemini 时用 |
 | ds-flash / ds-pro | `deepseek-flash` / `deepseek-pro` |
 | glm | `glm-5.3-flash` |
 | gemini | `gemini-3.8-flash` |
 | luna / terra / sol | GPT 系列的三个档位，具体版本以 `bindings.tsv` 为准 |
 | grok | Grok 系列，具体版本以 `bindings.tsv` 为准 |
 
-`cc`、`agy` 是 harness，模型另说；harness、model、api 三轴分开，api 由本机清单决定。
+`cc`、`agy`、`agy-min` 是 harness，模型另说；harness、model、api 三轴分开，api 由本机清单决定。
 
 ## 派多个组合
 
