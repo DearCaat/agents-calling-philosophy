@@ -14,6 +14,10 @@ usually does not); whether the model thought is then seen in "reasoning".
 Rerunning with the same --out skips ids whose last record is ok and whose request
 fingerprint (protocol + full body) is unchanged; failed or changed ids run again.
 
+Thinking is on by default: a request that sets neither reasoning_effort nor thinking (in --param
+or in its line's "params") gets reasoning_effort=high on chat and thinking={"type":"enabled"} on
+Messages. --no-think drops this default; switches set explicitly are still sent.
+
 Stable content (instructions, rubric, shared context) belongs in the system prompt
 or at the start of the messages so that provider prefix caching can reuse it across
 requests; the per-item part goes last.
@@ -58,6 +62,10 @@ TIMEOUT_STATUS = {408, 504, 524}
 LATE_S = 120
 # Streamed thinking is counted in characters; ~3 per token (DeepSeek: 462772 chars for 128000 tokens).
 CHARS_PER_TOKEN = 3
+# Sent when the caller sets no thinking switch (user rule 2026-10-26: thinking on by default). A route
+# drops a switch it does not know without error, and deepseek-flash does not think on either
+# protocol unless asked (10-26), so a missing switch silently lowers quality.
+DEFAULT_THINKING = {'chat': ('reasoning_effort', 'high'), 'messages': ('thinking', {'type': 'enabled'})}
 
 
 def die(msg):
@@ -113,6 +121,9 @@ def read_credential(path, name):
 def build_body(item, a, system):
     params = dict(a.param)
     params.update(item.get('params') or {})
+    if not a.no_think and not ({'reasoning_effort', 'thinking'} & set(params)):
+        k, v = DEFAULT_THINKING[a.protocol]
+        params[k] = v
     msgs = item.get('messages') or [{'role': 'user', 'content': item['prompt']}]
     if 'system' in item:
         system = item['system']
@@ -386,9 +397,12 @@ def main():
                    help='output limit including thinking; none is sent unless set. '
                         'Hitting it is reported as a failure, not accepted')
     p.add_argument('--param', action='append', default=[], metavar='K=V',
-                   help='extra body field, V parsed as JSON when possible (e.g. temperature=0). Thinking is switched on '
-                        'differently per protocol: chat reasoning_effort=high; messages thinking=\'{"type":"enabled"}\'. '
-                        'A field the route does not know is dropped without error')
+                   help='extra body field, V parsed as JSON when possible (e.g. temperature=0). Thinking is on by '
+                        'default (see --no-think); set it yourself per protocol: chat reasoning_effort=low|high|max; '
+                        'messages thinking=\'{"type":"enabled"}\'. A field the route does not know is dropped without error')
+    p.add_argument('--no-think', action='store_true',
+                   help='do not add the default thinking switch (chat reasoning_effort=high, messages thinking '
+                        'enabled); switches set with --param or a line\'s "params" are still sent')
     p.add_argument('--json', action='store_true', help='parse the reply as JSON into "parsed"; unparseable counts as failed')
     p.add_argument('--json-retries', type=int, default=1, help='re-asks when the reply is not JSON (default 1)')
     p.add_argument('-j', '--concurrency', type=int, default=4)
@@ -430,6 +444,9 @@ def main():
         if not a.key_env or not os.environ.get(a.key_env):
             die('--base-url needs --key-env naming a set environment variable')
         base, key, a.protocol = a.base_url, os.environ[a.key_env], a.protocol or 'chat'
+    k, v = DEFAULT_THINKING[a.protocol]
+    think = ', '.join('%s=%s' % (f, json.dumps(a.param[f])) for f in ('reasoning_effort', 'thinking') if f in a.param) \
+        or ('off (--no-think)' if a.no_think else '%s=%s (default, unless a line sets its own)' % (k, json.dumps(v)))
     base = base.rstrip('/')
     url = base + ('/chat/completions' if a.protocol == 'chat' else '/messages')
     headers = {'Content-Type': 'application/json'}
@@ -464,9 +481,9 @@ def main():
 
     done = load_done(a.out)
     todo = [it for it in items if done.get(it['id']) != it['_fp']]
-    print('llm-call: %d items, %d already done, %d to run; %s %s via %s; %d session ids'
+    print('llm-call: %d items, %d already done, %d to run; %s %s via %s; %d session ids; thinking %s'
           % (len(items), len(items) - len(todo), len(todo), a.protocol, a.model, a.api or base,
-             len({it['_sid'] for it in items if it['_sid']})), file=sys.stderr)
+             len({it['_sid'] for it in items if it['_sid']}), think), file=sys.stderr)
     if a.dry_run:
         if todo:
             print(json.dumps(todo[0]['_body'], ensure_ascii=False, indent=1))
@@ -522,7 +539,7 @@ def main():
     if a.protocol == 'messages' and 'reasoning_effort' in a.param and 'thinking' not in a.param:
         print('llm-call: warning: reasoning_effort is a chat field; Messages routes drop it silently. '
               'Use --param thinking=\'{"type":"enabled"}\'', file=sys.stderr)
-    elif ({'reasoning_effort', 'thinking'} & set(a.param)) and state['ok'] and not state['thought']:
+    elif (not a.no_think or {'reasoning_effort', 'thinking'} & set(a.param)) and state['ok'] and not state['thought']:
         print('llm-call: warning: thinking was requested but no result shows any; check the route honours it',
               file=sys.stderr)
     if stop.is_set():
