@@ -4,9 +4,10 @@
 Each input line is one request, for example:
   {"id":"sample-1","state":"...","questions":{"eligible":{"type":"noul","instructions":"...","criteria":{"true":"yes","false":"no"}}}}
 
-Optional fields are "model" (otherwise --model, then d3) and "images" (file paths or
-base64 data URIs). Results are appended to --out as each item finishes. On rerun, ids
-with a successful result already in --out are skipped.
+Optional fields are "model" (otherwise --model; there is no default because the served
+models change, list them with --list-models) and "images" (file paths or base64 data
+URIs). Results are appended to --out as each item finishes. On rerun, ids with a
+successful result already in --out are skipped.
 
 The route is resolved from --api in local/api-routes.tsv. This is JEV's native
 /v1/systemone protocol, not a chat-completions or Messages API. Requests bypass
@@ -188,7 +189,9 @@ def prepare_item(item, args, line_no):
         die('input line %d needs a nonempty string "state"' % line_no)
     if not isinstance(questions, dict) or not questions:
         die('input line %d needs a nonempty object "questions"' % line_no)
-    model = item['model'] if 'model' in item else (args.model or 'd3')
+    model = item['model'] if 'model' in item else args.model
+    if model is None:
+        die('input line %d has no "model" and --model is not set; take an id from --list-models' % line_no)
     if not isinstance(model, str) or not model.strip():
         die('input line %d has an invalid model' % line_no)
     body = {'model': model, 'state': state, 'questions': questions}
@@ -389,7 +392,7 @@ def run_batch(items, args, base, key):
     todo = [item for item in items if item['id'] not in done]
     already_done = len(items) - len(todo)
     print('jev-call: %d items, %d already done, %d to run; model default %s via %s' %
-          (len(items), already_done, len(todo), args.model or 'd3', args.api), file=sys.stderr)
+          (len(items), already_done, len(todo), args.model or 'none (set per line)', args.api), file=sys.stderr)
     if args.dry_run:
         if todo:
             # The request body contains only user-provided task input; no credentials.
@@ -499,7 +502,8 @@ def main(argv=None):
     parser.add_argument('--api', required=True, help='api_id in the local api-routes.tsv (e.g. jev)')
     parser.add_argument('--in', dest='inp', help='input JSONL, or - for stdin')
     parser.add_argument('--out', help='output JSONL (appended; also the resume record)')
-    parser.add_argument('--model', help='default model name (default: d3; an input row may override it)')
+    parser.add_argument('--model', help='model id for lines without "model"; no default, the served models change '
+                        '(take an id from --list-models)')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--list-models', action='store_true', help='print GET /v1/models and exit')
     mode.add_argument('--health', action='store_true', help='print GET /v1/health and exit')
