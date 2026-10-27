@@ -507,11 +507,13 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--list-models', action='store_true', help='print GET /v1/models and exit')
     mode.add_argument('--health', action='store_true', help='print GET /v1/health and exit')
-    parser.add_argument('-j', '--concurrency', type=int, default=32,
-                        help='parallel requests (default 32; the gateway queues, so the client does not throttle)')
+    parser.add_argument('-j', '--concurrency', type=int, default=1024,
+                        help='parallel requests (default 1024; CPA queues, spreads the load over the upstreams and '
+                        'keeps the backends full, so the client does not throttle)')
     parser.add_argument('--attempts', type=int, default=8, help='tries per item for 429/model_warming (default 8; a busy gateway queues a request up to about 30 s before answering 429)')
-    parser.add_argument('--timeout', type=float, default=135,
-                        help='seconds to wait for one request (default 135; gateway budget is 120 seconds)')
+    parser.add_argument('--timeout', type=float, default=160,
+                        help='seconds to wait for one request (default 160: CPA may hold a request up to 30 s, '
+                        'then the backend budget is 120 seconds)')
     parser.add_argument('--stop-after-failures', type=int, default=10,
                         help='stop starting requests after this many consecutive failed items (default 10)')
     parser.add_argument('--max-side', type=int, metavar='PIXELS',
