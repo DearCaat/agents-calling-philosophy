@@ -405,7 +405,8 @@ def main():
                         'enabled); switches set with --param or a line\'s "params" are still sent')
     p.add_argument('--json', action='store_true', help='parse the reply as JSON into "parsed"; unparseable counts as failed')
     p.add_argument('--json-retries', type=int, default=1, help='re-asks when the reply is not JSON (default 1)')
-    p.add_argument('-j', '--concurrency', type=int, default=4)
+    p.add_argument('-j', '--concurrency', type=int, default=32,
+                   help='parallel requests (default 32; the 8317 gateway queues, backs off and switches upstreams)')
     p.add_argument('--warmup', type=int, default=2,
                    help='with -j > 1, run this many requests one by one first so the shared prefix gets cached (default 2)')
     p.add_argument('--attempts', type=int, default=6, help='tries per request on retryable errors (default 6)')
