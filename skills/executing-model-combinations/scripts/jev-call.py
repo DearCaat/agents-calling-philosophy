@@ -6,7 +6,8 @@ Each input line is one request, for example:
 
 Optional fields are "model" (otherwise --model; there is no default because the served
 models change, list them with --list-models) and "images" (file paths or base64 data
-URIs). Results are appended to --out as each item finishes. On rerun, ids with a
+URIs). Name the model only (e.g. d3-ultra), never an upstream such as jev-local/: CPA
+chooses the upstream and refuses prefixed names. Results are appended to --out as each item finishes. On rerun, ids with a
 successful result already in --out are skipped.
 
 The route is resolved from --api in local/api-routes.tsv. This is JEV's native
@@ -194,6 +195,9 @@ def prepare_item(item, args, line_no):
         die('input line %d has no "model" and --model is not set; take an id from --list-models' % line_no)
     if not isinstance(model, str) or not model.strip():
         die('input line %d has an invalid model' % line_no)
+    if re.match(r'\s*jev-[^/]*/', model, re.I):
+        die('input line %d names model %r with an upstream prefix; write the model only (e.g. d3-ultra), '
+            'CPA chooses the upstream' % (line_no, model))
     body = {'model': model, 'state': state, 'questions': questions}
     if 'images' in item:
         images = item['images']

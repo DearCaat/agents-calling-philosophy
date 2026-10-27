@@ -121,6 +121,8 @@ class JevCallTests(unittest.TestCase):
         self.input.write_text(''.join(json.dumps(row) + '\n' for row in rows), encoding='utf-8')
 
     def invoke(self, *extra):
+        if '--model' not in extra:
+            extra += ('--model', 'test-model')
         return subprocess.run(
             [sys.executable, str(SCRIPT), '--api', 'jev', '--in', str(self.input),
              '--out', str(self.output), *extra],
@@ -189,6 +191,15 @@ class JevCallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.output_rows()), 4)
         self.assertGreaterEqual(self.state.max_active, 2)
+
+    def test_upstream_prefixed_model_is_refused_before_any_call(self):
+        row = self.row('prefixed', 'normal')
+        row['model'] = 'jev-vllm-dr/vllm-sr/d3-ultra'
+        self.write_rows([row])
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('upstream prefix', result.stderr)
+        self.assertEqual(self.state.records, [])
 
     def test_image_file_becomes_base64_data_uri(self):
         image = self.root / 'one.png'
