@@ -23,6 +23,7 @@ class MockState:
     def __init__(self):
         self.lock = threading.Lock()
         self.records = []
+        self.paths = []
         self.counts = {}
         self.active = 0
         self.max_active = 0
@@ -51,6 +52,7 @@ def start_mock():
             sample = body['state']
             with state.lock:
                 state.records.append((body, self.headers.get('Authorization')))
+                state.paths.append(self.path)
                 state.counts[sample] = state.counts.get(sample, 0) + 1
                 count = state.counts[sample]
                 state.active += 1
@@ -98,10 +100,12 @@ class JevCallTests(unittest.TestCase):
         self.key_file = self.root / 'mock-key'
         self.key_file.write_text('unit-test-key\n', encoding='utf-8')
         base = 'http://127.0.0.1:%d/v1' % self.server.server_address[1]
+        tool_base = 'http://127.0.0.1:%d/tool' % self.server.server_address[1]
         (self.local / 'api-routes.tsv').write_text(
             'api_id\tbase_url\twire_protocol\tcredential_ref\tmodels_path\tauth_scheme\tstate\tnotes\n'
-            'jev\t%s\tjev-systemone\tfile:%s\t-\tbearer\tavailable\tlocal mock\n' %
-            (base, self.key_file), encoding='utf-8')
+            'jev\t%s\tjev-systemone\tfile:%s\t-\tbearer\tavailable\tlocal mock\n'
+            'tool\t%s\tcpa-tool\tfile:%s\t/\tbearer\tavailable\tlocal mock\n' %
+            (base, self.key_file, tool_base, self.key_file), encoding='utf-8')
         self.env = dict(os.environ)
         self.env['AGENTS_LOCAL_ROOT'] = str(self.local)
         self.env.pop('HTTP_PROXY', None)
@@ -183,6 +187,7 @@ class JevCallTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertIn('1 already done, 0 to run', second.stderr)
         self.assertEqual(self.state.counts['normal'], 1)
+        self.assertEqual(set(self.state.paths), {'/tool/jev/systemone'})
         self.assertEqual(len(self.output_rows()), 1)
 
     def test_parallel_requests_overlap(self):
