@@ -18,7 +18,7 @@ set +a
 | `codex-subagent` | 当前 Codex 宿主协作工具 | `spawn_agent` | `followup_task` 继续同一 child；无 shell resume | 宿主管理，参数不暴露 | 共享 filesystem/cwd；当前团队总槽位 11；child 可再派 child |
 | `codex-cli` | PATH 上的 `codex` | `codex exec` | exec `resume` / `fork` | request compression 与 remote compaction feature 当前开启；无 `--autocompact` | sandbox 三档、approval；本机 multi-agent v2 最大 11 子线程 |
 | `claude-old` | PATH 上的 `claude_old`（本机 wrapper 与 HOME 见 `local/harnesses.md`） | `-p/--print` | continue/resume/fork | `--autocompact auto|100k–1M` | permission mode、allow/deny tools、agents；数值并发未核实 |
-| `dsh` | `dsh`（DeepSeek Harness；交互版 `dst` = dsh-tui，不能脚本化） | `--profile headless`，`-` 读 stdin | 每次新 session；`--session-id` 可接续 | basic compaction：auto、threshold 0.8、retain 0.16、summary 8192 | 默认 workspace-write + ask；内建 retry；subagent maxDepth 3；parallel tool calls 默认 10 |
+| `dsh` | `dsh`（DeepSeek Harness）；交互版 `dst` = dsh-tui，0.17.0 起另有一次性 `dst run`/`-p` | `dsh --profile headless`，`-` 读 stdin；或 `dst run -- <prompt>` | 每次新 session；`--session-id` 可接续 | basic compaction：auto、threshold 0.8、retain 0.16；tool-result 剪枝 8192 字符 | 三档 sandbox × approval(ask\|never)，默认 workspace-write + ask；内建 retry；subagent maxDepth 默认 1（Host 设置）；maxParallelSubCalls 默认 10 |
 | `grok-build` | PATH 上的 `grok` | prompt / prompt-file | continue/resume/fork | 精确上下文压缩行为未核实 | sandbox、permission mode、subagents；数值并发未核实 |
 | `antigravity-cli` | PATH 上的 `agy` | `-p/--print` | continue/conversation | 上下文超限由 CLI 内部自动处理 | sandbox/dangerously-skip-permissions、MCP、subagent |
 | `agy-min` | PATH 上的 `agy-min`（本机启动器，见 `local/harnesses.md`） | `-p/--print` | 同 `antigravity-cli`，会话在隔离 HOME 里 | 同 `antigravity-cli` | 同 `antigravity-cli`，agent 固定为 `mini` |
@@ -30,14 +30,14 @@ set +a
 - `codex-subagent`：唯一可直接使用当前 Codex 宿主协作工具的入口；child 与 main 共享 filesystem/cwd，可用 `followup_task` 延续局部上下文。不经 wrapper，effort 与 context 由宿主带上；其限制是不能作为独立 shell session resume，也不能承载其他厂商模型。
 - `codex-cli`：可在新会话中显式选择已登记 profile / model / effort，支持 `exec resume` 与 `fork`、JSONL 和 output schema；适合需要独立 CLI session 或外部并行的已登记组合。它不会因为 catalog 有条目就让缺失 binding 的模型变得可执行。
 - `claude-old`：支持 continue/resume/fork、`--autocompact` 与 permission/tool 参数。压缩较好，长程任务较稳（`local-experience`）；这不证明当前本地代理的 alias 对应某个 Claude 上游模型，也不代表每类任务更强。
-- `dsh`：有原生 retry 和内部 subagent/parallel tool-call 能力。headless 没有逐次 `--model`/`--effort`；`dispatch.sh` 每次写一个一次性 `--patch` 覆盖 `agent-default-model` 来选模型，effort 不逐次传。cwd 取进程当前目录。preset（如 minimal）与 profile 是两层：preset 由 api-session-controller 在创建会话时挂载（web profile 加载它），headless runner 不经过它，所以 headless 下设默认 preset 不生效。要在 headless 用 minimal 的工具面，把 minimal 的插件表平铺成 `--patch`（覆盖已有行用 `- id:`，新增行如 MCP 工具用 `- insert:`）。
+- `dsh`：三层要分开看——**profile**（`$DSH_HOME/profiles/<name>/`：`package.json` 的 `dsh.profile.bundles` 定基础树，`cordis.patch.yml` 是本地覆盖，`dsh plugin --profile X add` 往 profile 装包，`--dump-config` 打印合成后的最终树）→ **agent preset**（`standard`/`minimal`/`ptc`/`cordis`，只在 web/TUI 由 `dsh-agent-preset-registry` 于会话创建时挂载，决定模型可见的工具面）→ **tools mode**（`native` 或 `ptc`）。headless 走 base 树 + headless 补丁，不挂 preset registry，所以 headless 下设默认 preset 不生效；但 PTC 有等价开关 `DSH_TOOLS_MODE=ptc`（0.2.1-rc.2 实测 `run_code` 算出 4），minimal 没有，只能把它的插件表平铺成 `--patch`（覆盖已有行用 `- id:`，新增行如 MCP 工具用 `- insert:`）。headless 没有逐次 `--model`/`--effort`；`dispatch.sh` 每次写一个一次性 `--patch` 覆盖 `agent-default-model` 来选模型，effort 不逐次传。0.17.0 起 `dst run` 多了 `--provider/--model`（可以省掉模型 patch），但仍没有 `--effort`。effort 写成 `llm-deepseek.config.reasoningEffort`（`off|low|high|max`，默认 `high`），只能走 patch，且 patch 是整块替换 `config`——只写这一项会把 baseURL 和模型表冲掉。TUI 的 `/effort` 只改 `~/.dsh-tui/effort.json`，与 headless 无关。cwd 取进程当前目录。权限是三档 sandbox × `approval`(`ask|never`)，默认 `ask`；headless 没有应答方，`ask` 会 fail closed（详见下文 `## dsh`）。
 - `grok-build`：支持 session continue/resume/fork、sandbox 与 subagents；当前模型压缩行为和数值并发未核实，且已有请求 model 与 observed model 漂移的事实。需要精确复现时必须记录两者。
 - `antigravity-cli`：入口为 PATH 上的 `agy`，Google Antigravity 原生 CLI。支持 `-p/--print`、`--model`、`--effort`、`--continue`、`--dangerously-skip-permissions`。可直连网关或 Gemini API，能联网，原生大上下文吞吐与多 Agent 编排速度快。`-p` 原生默认 5 分钟超时，到点可能带着半截输出 exit 0（`dispatch.sh` 默认传 12h）；对部分模型不接受 `--effort`。经网关时，上下文压缩靠网关模型列表里的 `inputTokenLimit`：用 `AGY_LLM_GATEWAY_MODELS` 静态列表时上限是 0，`/compact` 和自动压缩报 `summaryRequestMaxTokens ... is non-positive (modelMaxInputTokens=0, ...)`，长会话会停在这里；不设该变量、让 agy 从网关发现模型即可（agy 1.4.7，2026-10-26 local-test）。
 - `agy-min`：本机给 agy 写的最小启动器，不改 agy 二进制。它隔离 HOME（不带对话历史、brain、技能目录），用一个只有一句 system prompt 的自定义 agent，经网关调用；参数与 `antigravity-cli` 相同。请求仍由 agy 生成，system 约为原版 agy 的一半（10-25 实测 6479 对 14572 字节，`local-test`）。要像调 API 一样、尽量少受 harness 影响地用 Gemini 时用它。
 
 ## 厚薄
 
-最薄的是 dsh 套 minimal 工具面，基本只有模型加少量工具（headless 下要平铺成 `--patch`，见上文 dsh 条）；dsh 默认 profile 多了内建 retry、subagent 和并行工具调用；`codex-cli`、`claude-old`、`grok-build`、`antigravity-cli` 是成熟的厚 harness，有压缩、子代理、沙箱和会话续用；`agy-min` 是去掉历史与多余 system 段的 agy，工具与请求格式仍由 agy 决定。厚薄的取舍见 [executors.md](executors.md)。
+最薄的是 dsh 套 minimal 工具面，基本只有模型加少量工具（headless 下要平铺成 `--patch`，见上文 dsh 条；PTC 则一个 `DSH_TOOLS_MODE=ptc` 就够）；dsh 默认 profile 多了内建 retry、subagent 和并行工具调用；`codex-cli`、`claude-old`、`grok-build`、`antigravity-cli` 是成熟的厚 harness，有压缩、子代理、沙箱和会话续用；`agy-min` 是去掉历史与多余 system 段的 agy，工具与请求格式仍由 agy 决定。厚薄的取舍见 [executors.md](executors.md)。
 
 ## Codex native sub-agent
 
@@ -120,12 +120,34 @@ printf -- "- id: agent-default-model\n  config:\n    provider: %s\n    model: %s
 DEEPSEEK_API_KEY=... dsh --profile headless --patch "$PATCH" - <"$PROMPT_FILE" >"$OUT" 2>"$ERR"
 ```
 
-- `--patch` 要放在 app 参数（`--json`、任务文本）之前，否则报 unknown option。
+- `--patch` 要放在 app 参数（`--json`、任务文本）之前，否则报 unknown option；多个 `--patch` 按给出顺序叠加，后写的赢。
+- 覆盖粒度是**整块替换同一行的 `config`**，不做深合并：只写 `reasoningEffort` 会连该行原有 `baseURL`、`models` 一起冲掉。改一行就抄全量字段。
 - provider 的 endpoint 与模型列表在用户自己的 dsh 配置里（本机见 `local/harnesses.md`）；`dispatch.sh` 只覆盖所选模型。
-- provider 的 key 环境变量必须非空：为空时 dsh 会回退读工作目录的 `.env`。
+- 模型 id 必须落在该 provider 的 `models` 列表里（本机的 `llm-deepseek` 列表带 `wb/`、`boyue/` 这类前缀），否则报 `unknown provider for model …`。换模型三条路：持久改 `llm-deepseek.models`、一次性 `--patch agent-default-model`、`dst run --provider X --model Y`。
+- preset 有五个内置项：`standard`、`ptc`、`minimal`、`cordis`、`liangshen`。web 在会话创建时挂载；TUI 用 `/preset`（无参看列表、`/preset <id>` 切换、`/preset status` 查当前），优先级 `DSH_TUI_PRESET` > `~/.dsh-tui/agent-preset.json` > 配置 > `standard`，resume 沿用会话里记录的那个。`minimal` 不是 profile 而是一张工具面表，且 web 与 TUI 的内置定义不同（web 版带 compaction 和持久 shell，TUI 手册说无 compaction），引用时标出处。
+- provider 的 key 环境变量必须非空：为空时 dsh 会回退读工作目录的 `.env`（`$DSH_HOME/.env` 另有一层；`DSH_*` 前缀不允许由工作目录 `.env` 提供）。
+- PTC：设 `DSH_TOOLS_MODE=ptc` 即可（base 已挂 `dsh-ptc-runtime-node`），模型只看到 `run_code` 和生成的 SDK，不需要 patch。
+- effort：只有 `llm-deepseek.config.reasoningEffort`（`off|low|high|max`，默认 `high`）一条路，写进 `--patch`；TUI 里的 `/effort` 不作用于 headless。
+- 0.17.0+ 也可以用 `dst run`：`dst run --patch "$PATCH" --provider "$PROVIDER" --model "$MODEL" --output-format json -- "$PROMPT"`。它要求全局 launcher 与 profile 同版本；launcher 落后时 `run` 子命令不认，退回 `dsh --profile headless`。
+- 排查先看 `dsh --profile headless --dump-config`：确认 `--patch` 真的进了合成树，再怀疑 provider 或 key。
 - stdout 只有最终文本，reasoning 与诊断进 stderr；`--json` 输出 JSONL 事件（不含模型名）。退出码 0 表示最后一轮完成。
 - dsh 自带 `dsh-llm-retry`；`dispatch.sh` 不在其外层再重试。
 - 长会话会丢任务说明：basic compaction 按估计 token 触发，阈值 = min(0.8×窗口, 窗口−maxTokens−65536)，300K 窗口、128K maxTokens 时约 106K；压缩连首条消息一起压掉，没有置顶保护（`local-test`）。任务说明在首条消息里的长任务，把 maxTokens 降到 64K 并禁用 compaction-basic，或拆成短会话。
+
+### dsh 的权限
+
+权限是两个旋钮的组合，不是一个档位列表：`sandbox`（`read-only` / `workspace-write` / `danger-full-access`）× `approval`（`ask` / `never`）。`dsh-base` 自带的预设表是 `read-only→ask`、`workspace-write→ask`、`danger-full-access→never`。
+
+| 想达到 | 设成 | 入口 |
+|---|---|---|
+| 每步问（默认） | `workspace-write` + `ask` | 不用设 |
+| 自动改文件、仍关在 cwd（≈ Claude Code `acceptEdits`） | `workspace-write` + `never` | 在 `dsh-permission-presets` 的 `presets:` 里自建一项 |
+| 全放行（≈ Claude Code `bypassPermissions`） | `danger-full-access` + `never` | `DSH_PERMISSION_MODE=danger-full-access`；TUI `/permission danger-full-access` 或 `Shift+Tab` 第三档；`dst run --permission-mode danger-full-access` |
+| 模型先审再放行（实验性） | Auto review | 装 `dsh-experimental-auto-review`，仅 Web profile，默认关闭 |
+
+- headless 没有可应答的客户端：`approval: ask` 的请求直接 fail closed（"without an available answerer, the request fails closed"）。脚本要真干活，用 `DSH_PERMISSION_MODE=danger-full-access`，或装一个 `workspace-write + never` 预设。别指望 `~/.dsh-tui/permission.json`——那是 TUI 的，headless 不读。
+- TUI 里出现的 `acceptEdits` / `bypassPermissions` 是 Claude 后端的档位（转给 claude CLI），不是 dsh 的权限模型。
+- Auto review 的语义是"每个工具调用前用当前 agent 的模型审一遍，放行则按 Full access 执行，拒绝则问你"，会多花 token，也可能放行不安全操作；它不是 `acceptEdits`。
 
 ## Grok Build
 
