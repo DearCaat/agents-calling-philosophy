@@ -405,6 +405,14 @@ class ToolCallTests(unittest.TestCase):
 
     # mineru
 
+    def test_mineru_routes_cpa_and_upstream_urls(self):
+        from tools import mineru as M
+        self.assertEqual(M._route('/tool/mineru/tasks/j/uploads/f'), ('/tool/mineru/tasks/j/uploads/f', True))
+        self.assertEqual(M._route('http://127.0.0.1:8317/tool/mineru/tasks/j/uploads/f'),
+                         ('/tool/mineru/tasks/j/uploads/f', True))
+        self.assertEqual(M._route('http://127.0.0.1:18001/v1/tasks/j/uploads/f'), ('/mineru/tasks/j/uploads/f', False))
+        self.assertIsNone(M._route('http://h/tool/mineru/../x'))
+
     def test_mineru_submit_upload_poll_and_download_zip(self):
         pdf = self.make_file('paper.pdf')
         self.write_rows([{'id': 'p1', 'file': pdf, 'tier': 'standard', 'output_formats': ['markdown', 'zip']}])

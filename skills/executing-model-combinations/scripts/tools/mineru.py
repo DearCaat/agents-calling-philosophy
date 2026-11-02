@@ -19,7 +19,7 @@ import json
 import os
 import re
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from tools import ToolError
 
@@ -119,13 +119,16 @@ def _first_file(answer):
 def _route(url):
     """Return (path, absolute) under CPA for a URL from an answer, or None.
 
-    CPA gives /tool/mineru/... URLs, used as they are. The upstream gives http://<host>/v1/... URLs,
-    which CPA does not rewrite (2026-11-02): their path after /v1/ goes under /mineru/ and the host is dropped.
+    CPA gives /tool/mineru/... URLs, bare or with its own host (http://<cpa>/tool/mineru/..., seen
+    2026-11-02 evening); their path is used as it is. The upstream gives http://<host>/v1/... URLs, which
+    CPA did not rewrite earlier that day: their path after /v1/ goes under /mineru/ and the host is dropped.
     """
     if not isinstance(url, str) or '..' in url:
         return None
-    if url.startswith(TOOL_PREFIX):
-        return url, True
+    parts = urlsplit(url)
+    path = parts.path + ('?' + parts.query if parts.query else '')
+    if path.startswith(TOOL_PREFIX):
+        return path, True
     m = UPSTREAM_URL_RE.fullmatch(url)
     return ('/mineru/' + m.group(1), False) if m else None
 
