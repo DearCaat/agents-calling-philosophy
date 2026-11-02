@@ -4,7 +4,7 @@ CPA 在 8317 上提供工具网关，路径为 `/tool/<名字>/...`。客户端�
 
 - `jev`：判定（选项、是/否、打分），普通题型，字符串 state。
 - `vela`：判定，接受对象 state 与 span 题（抽取式标注）。
-- `mineru`：文档解析（MinerU V1 接口的透传，封装为提交、轮询、下载）。
+- `mineru`：文档解析（MinerU 4.1.2 任务接口：JSON 提交、PUT 上传、轮询、下载 zip）。
 - `oxr`：文档解析（OXR 解析器，每个文件一次同步请求，返回 Markdown 与 JSON）。
 
 工具列表、接口和模型 id 以服务端为准，这里不写死：
@@ -69,12 +69,17 @@ tool-call.py mineru --file paper.pdf --out results.jsonl --out-dir ./parsed
 
 ## mineru
 
-- 入口：`/tool/mineru/...`，是 MinerU V1 接口的透传。`tool-call.py mineru` 把"提交、轮询、下载"封装成一个批量命令。
+- 入口：`/tool/mineru/...`，后端是 MinerU 4.1.2 的任务接口。`tool-call.py mineru` 把"提交、上传、轮询、下载"封装成一个批量命令。
 - 输入：JSONL 每行 `{"id", "file", "tier"?, "output_formats"?}`；或命令行 `--file PATH`（可重复，id 取文件名），此时必须给 `--out-dir`。
 - `id` 只用字母、数字、`_`、`.`、`-`，它会成为结果文件名。`file` 是本地文件路径（相对当前目录），单个文件不超过 200 MiB，超过则发送前拒收。
-- `--tier` 默认 `advanced`。可选值用 `GET /tool/mineru/tiers` 查看。
-- `output_formats` 为列表。含 `"zip"` 时下载 zip 包到 `<out-dir>/<id>.zip`，否则下载 JSON 到 `<out-dir>/<id>.json`。格式名以 MinerU 接口为准。
-- 流程：把文件的原始字节提交到 `POST /tool/mineru/tasks`，得到 `task_id`；先等 5 秒再轮询状态，之后间隔加倍，最长 60 秒；状态为 `completed` 时下载结果，为 `failed` 时记为失败；总等待超过 `--timeout` 时记为超时。
+- `--tier` 默认 `advanced`。可选值用 `GET /tool/mineru/tiers` 查看（2026-11-02 为 flash、basic、standard、advanced）。
+- `output_formats` 可选。`"markdown"`、`"zip"` 只说明客户端返回什么，不发给上游；上游接受的 `default`、`docx`、`html`、`latex` 放进请求体，其他值发送前拒收。结果总是 zip（内含 `markdown.md`、JSON 与图片），写到 `<out-dir>/<id>.zip`。上游已不提供单独的 JSON 结果，所以不再写 `.json`。
+- 流程（2026-11-02 实测）：
+  1. `POST /tool/mineru/tasks`，JSON 体 `{"files": [{"file_name", "bytes"}], "tier", "output_formats"?}`；得到 `task_id` 与 `files[0].upload.url`，状态为 `waiting-file`。
+  2. 把文件原始字节 `PUT` 到上传地址（CPA 路径为 `/tool/mineru/tasks/<id>/uploads/<file_id>`）。
+  3. 先等 5 秒再轮询 `GET /tool/mineru/tasks/<id>`，之后间隔加倍，最长 60 秒。状态 `completed` 时取 `files[0].result_url` 下载；`failed` 时记为失败；总等待超过 `--timeout` 时记为超时。
+- 上游在回答里给的是绝对地址 `http://<上游>/v1/...`。2026-11-02 实测 CPA 没有改写它，网关 schema 也没有列出这种地址。客户端只取 `/v1/` 之后的路径，接到 `/tool/mineru/` 下请求，不直接连上游地址。
+- 旧写法已被上游拒绝：查询串提交（400，"POST parameters must be supplied in the JSON body"）、`tasks/<id>/result`（404）。
 - 结果在上游只保留一段时间，取到后应及时处理。
 - 输出 JSONL 每行记录：`id`、`ok`、`task_id`、`task_status`、`result_file`、`status`（最后一次 HTTP 状态）、`attempts`、`latency_s`、`error`。
 - 默认 `-j 4`：上游一次只解析一个任务，其余排队。每个并发文件都会整体读入内存，并发高时注意内存。

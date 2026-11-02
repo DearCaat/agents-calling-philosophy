@@ -1,23 +1,30 @@
-"""Tool mineru: document parsing through the MinerU V1 API behind CPA (/tool/mineru).
+"""Tool mineru: document parsing with MinerU 4.1.2 (task API) behind CPA (/tool/mineru).
 
-Input line: {"id", "file": "<local PDF or image path>", "tier"?: "<tier>", "output_formats"?: ["markdown", "zip"]}.
+Input line: {"id", "file": "<local PDF or image path>", "tier"?: "<tier>", "output_formats"?: [...]}.
 The id may use letters, digits, "_", "." and "-": it names the result file. On the command line,
 --file PATH (repeatable; the id is the file name) replaces --in, and --out-dir is required.
-Per item: POST tasks?filename=&tier=[&output_formats=] with the raw file bytes -> task_id ->
-poll the status until completed or failed -> GET the result (response_format=zip when
-output_formats has "zip") into <out-dir>/<id>.zip or <id>.json. Status and result URLs are
-used as CPA returns them (under /tool/mineru/).
+
+Per item, as the upstream 4.1.2 task API takes it (checked against CPA on 2026-11-02):
+  1. POST /mineru/tasks with a JSON body {"files": [{"file_name", "bytes"}], "tier", "output_formats"?}
+     -> task_id and files[0].upload.url (task status "waiting-file").
+  2. PUT the raw file bytes to that upload URL.
+  3. Poll the task status until "completed" or "failed"; files[0].result_url names the result.
+  4. GET the result, a zip that holds the markdown, into <out-dir>/<id>.zip.
+URLs from the answers are used by their path only: the part after "/v1/" is requested under
+/mineru/ through CPA, whatever host the answer names.
+output_formats: "markdown" and "zip" name what the client returns and are not sent; the upstream
+names (default, docx, html, latex) are sent in the body.
 """
 import json
 import os
 import re
 import time
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from tools import ToolError
 
 NAME = 'mineru'
-DESCRIPTION = 'document parsing (MinerU V1 API): submit, poll, download'
+DESCRIPTION = 'document parsing (MinerU 4.1.2 task API): submit, upload, poll, download'
 DEFAULT_CONCURRENCY = 4
 DEFAULT_TIMEOUT = 3600.0
 DEFAULT_TIER = 'advanced'
@@ -25,7 +32,10 @@ MAX_FILE_BYTES = 200 << 20
 POLL_MAX_INTERVAL = 60.0
 MAX_ERROR_CHARS = 600
 TOOL_PREFIX = '/tool/mineru/'
+CLIENT_FORMATS = ('markdown', 'zip')
+UPSTREAM_FORMATS = ('default', 'docx', 'html', 'latex')
 ID_RE = re.compile(r'[A-Za-z0-9_][A-Za-z0-9._-]*')
+UPSTREAM_URL_RE = re.compile(r'(?:https?://[^/\s]+)?/v1/(\S+)')
 
 
 def add_arguments(parser):
@@ -33,7 +43,7 @@ def add_arguments(parser):
                         help='file to parse; repeat for several, instead of --in')
     parser.add_argument('--tier', default=DEFAULT_TIER,
                         help='parsing tier, default advanced (ids from GET /tool/mineru/tiers)')
-    parser.add_argument('--out-dir', help='directory for results: <id>.zip or <id>.json (required)')
+    parser.add_argument('--out-dir', help='directory for results: <id>.zip (required)')
     parser.add_argument('--poll-interval', type=float, default=5.0,
                         help='seconds before the first status poll, doubling up to 60 (default 5)')
 
@@ -79,14 +89,17 @@ def prepare(item, args):
     if formats is not None and (not isinstance(formats, list) or
                                 not all(isinstance(f, str) and f.strip() for f in formats)):
         raise ToolError('"output_formats" must be a list of strings')
-    query = [('filename', os.path.basename(path)), ('tier', tier)]
-    if formats:
-        # MinerU V1 takes one output_formats parameter per format (gateway guide, 2026-10-26).
-        query.extend(('output_formats', f) for f in formats)
-    want_zip = bool(formats) and 'zip' in formats
+    known = CLIENT_FORMATS + UPSTREAM_FORMATS
+    unknown = [f for f in (formats or []) if f not in known]
+    if unknown:
+        raise ToolError('"output_formats" %s not known (use %s)' % (json.dumps(unknown), ', '.join(known)))
+    upstream = [f for f in dict.fromkeys(formats or []) if f in UPSTREAM_FORMATS]
+    body = {'files': [{'file_name': os.path.basename(path), 'bytes': size}], 'tier': tier}
+    if upstream:
+        body['output_formats'] = upstream
     preview = {'file': path, 'bytes': size, 'tier': tier, 'output_formats': formats or [],
-               'submit': '/mineru/tasks?' + urlencode(query)}
-    return {'file': path, 'query': query, 'want_zip': want_zip, 'preview': preview}
+               'submit': 'POST /mineru/tasks', 'body': body}
+    return {'file': path, 'body': body, 'preview': preview}
 
 
 def _json_object(raw):
@@ -97,11 +110,24 @@ def _json_object(raw):
     return obj if isinstance(obj, dict) else None
 
 
-def _locate(url, fallback):
-    """Return (path, absolute): the URL CPA put in the answer, or the fallback under the tool base."""
-    if isinstance(url, str) and url.startswith(TOOL_PREFIX) and '..' not in url:
+def _first_file(answer):
+    files = answer.get('files') if answer else None
+    first = files[0] if isinstance(files, list) and files else None
+    return first if isinstance(first, dict) else {}
+
+
+def _route(url):
+    """Return (path, absolute) under CPA for a URL from an answer, or None.
+
+    CPA gives /tool/mineru/... URLs, used as they are. The upstream gives http://<host>/v1/... URLs,
+    which CPA does not rewrite (2026-11-02): their path after /v1/ goes under /mineru/ and the host is dropped.
+    """
+    if not isinstance(url, str) or '..' in url:
+        return None
+    if url.startswith(TOOL_PREFIX):
         return url, True
-    return fallback, False
+    m = UPSTREAM_URL_RE.fullmatch(url)
+    return ('/mineru/' + m.group(1), False) if m else None
 
 
 def run_one(client, item, args):
@@ -127,9 +153,7 @@ def run_one(client, item, args):
         record['error'] = 'file is larger than 200 MiB'
         return record
 
-    reply = send('POST', '/mineru/tasks?' + urlencode(item['query']), data=data,
-                 content_type='application/octet-stream')
-    del data
+    reply = send('POST', '/mineru/tasks', json_body=item['body'])
     if reply.error is not None:
         record['error'] = 'submit failed: ' + reply.error
         return record
@@ -140,10 +164,23 @@ def run_one(client, item, args):
         return record
     task_id = str(task_id)
     record['task_id'] = task_id
-    task_quoted = quote(task_id, safe='')
-    status_path, status_abs = _locate(answer.get('status_url'), '/mineru/tasks/%s' % task_quoted)
-    result_path, result_abs = _locate(answer.get('result_url'), '/mineru/tasks/%s/result' % task_quoted)
+    upload = _first_file(answer).get('upload')
+    upload = upload if isinstance(upload, dict) else {}
+    target = _route(upload.get('url'))
+    if target is None:
+        record['error'] = 'submit answer has no upload URL'
+        return record
+    headers = upload.get('headers')
+    ctype = headers.get('Content-Type') if isinstance(headers, dict) else None
 
+    reply = send('PUT', target[0], absolute=target[1], data=data,
+                 content_type=ctype or 'application/octet-stream')
+    del data
+    if reply.error is not None:
+        record['error'] = 'upload failed: ' + reply.error
+        return record
+
+    status_path = '/mineru/tasks/%s' % quote(task_id, safe='')
     interval = args.poll_interval
     while True:
         remaining = deadline - time.monotonic()
@@ -152,7 +189,7 @@ def run_one(client, item, args):
             return record
         time.sleep(min(interval, remaining))
         interval = min(interval * 2, POLL_MAX_INTERVAL)
-        reply = send('GET', status_path, absolute=status_abs)
+        reply = send('GET', status_path)
         if reply.error is not None:
             record['error'] = 'status poll failed: ' + reply.error
             return record
@@ -168,15 +205,17 @@ def run_one(client, item, args):
             record['error'] = 'task failed: ' + json.dumps(detail, ensure_ascii=False)[:MAX_ERROR_CHARS]
             return record
 
+    target = _route(_first_file(answer).get('result_url'))
+    if target is None:
+        record['error'] = 'completed answer has no result URL'
+        return record
     try:
         os.makedirs(args.out_dir, exist_ok=True)
     except OSError as e:
         record['error'] = 'cannot create --out-dir: %s' % (e.strerror or e)
         return record
-    ext = 'zip' if item['want_zip'] else 'json'
-    dest = os.path.join(args.out_dir, '%s.%s' % (item['id'], ext))
-    query = '?response_format=zip' if item['want_zip'] else ''
-    reply = send('GET', result_path + query, absolute=result_abs, save_to=dest)
+    dest = os.path.join(args.out_dir, '%s.zip' % item['id'])
+    reply = send('GET', target[0], absolute=target[1], save_to=dest)
     if reply.error is not None:
         record['error'] = 'result download failed: ' + reply.error
         return record

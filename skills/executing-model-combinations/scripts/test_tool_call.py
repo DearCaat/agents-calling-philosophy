@@ -73,6 +73,9 @@ def start_mock():
         def do_POST(self):
             self.handle_any('POST')
 
+        def do_PUT(self):
+            self.handle_any('PUT')
+
         def answer(self, method, path, query, body):
             if method == 'GET' and path == '/tool/':
                 return self.reply(200, {'object': 'list', 'data': [{'id': 'jev'}, {'id': 'vela'}, {'id': 'mineru'}, {'id': 'oxr'}]})
@@ -113,46 +116,78 @@ def start_mock():
                                     'usage': {'input_tokens': 1, 'output_tokens': 0}})
 
         def mineru(self, method, path, query, body):
+            # MinerU 4.1.2 task API as CPA forwards it: JSON body in, file bytes by PUT, zip out.
+            upstream = 'http://127.0.0.1:18001/v1'
             prefix = '/tool/mineru/tasks'
             if method == 'POST' and path == prefix:
-                name = query.get('filename', [''])[0]
+                if query:
+                    return self.reply(400, {'code': 'invalid_request',
+                                            'message': 'POST parameters must be supplied in the JSON body, not the URL'})
+                data = json.loads(body)
+                f0 = data['files'][0]
+                name = f0['file_name']
+                formats = data.get('output_formats', [])
+                if [f for f in formats if f not in ('default', 'docx', 'html', 'latex')]:
+                    return self.reply(400, {'error': {'code': 'invalid_request',
+                                                      'message': 'output_formats: %s' % formats}})
                 with mock.lock:
                     mock.counts[('submit', name)] = mock.counts.get(('submit', name), 0) + 1
-                    count = mock.counts[('submit', name)]
-                    if name == 'retry-once.pdf' and count == 1:
-                        retry = True
-                    else:
-                        retry = False
+                    retry = name == 'retry-once.pdf' and mock.counts[('submit', name)] == 1
+                    if not retry:
                         mock.task_seq += 1
-                        tid = 't%d' % mock.task_seq
-                        mock.tasks[tid] = {'file': name, 'polls': 0}
+                        tid, fid = 'job_%d' % mock.task_seq, 'file-%d' % mock.task_seq
+                        mock.tasks[tid] = {'file': name, 'file_id': fid, 'bytes': f0['bytes'],
+                                           'uploaded': False, 'polls': 0, 'output_formats': formats}
                 if retry:
                     return self.reply(429, {'error': 'busy'}, headers={'Retry-After': '0'})
-                return self.reply(200, {'task_id': tid, 'status': 'accepted',
-                                        'status_url': '/tool/mineru/tasks/%s' % tid,
-                                        'result_url': '/tool/mineru/tasks/%s/result' % tid})
-            if method == 'GET' and path.startswith(prefix + '/'):
-                tid, _, tail = path[len(prefix) + 1:].partition('/')
+                return self.reply(202, {'task_id': tid, 'status': 'waiting-file', 'files': [
+                    {'file_id': fid, 'file_name': name, 'status': 'waiting-file',
+                     'upload': {'url': '%s/tasks/%s/uploads/%s' % (upstream, tid, fid),
+                                'headers': {'Content-Type': 'application/octet-stream'},
+                                'expires_at': 4102444800}}]})
+            if method == 'PUT' and path.startswith(prefix + '/') and '/uploads/' in path:
+                tid, _, fid = path[len(prefix) + 1:].partition('/uploads/')
                 with mock.lock:
                     task = mock.tasks.get(tid)
-                    if task is not None and tail == '':
+                    accepted = task is not None and fid == task['file_id'] and len(body) == task['bytes']
+                    if accepted:
+                        task['uploaded'] = True
+                if not accepted:
+                    return self.reply(404, {'error': 'no such upload'})
+                return self.reply(200, {'task_id': tid, 'file_id': fid, 'status': 'pending'})
+            if method == 'GET' and path.startswith(prefix + '/') and '/' not in path[len(prefix) + 1:]:
+                tid = path[len(prefix) + 1:]
+                with mock.lock:
+                    task = mock.tasks.get(tid)
+                    if task is not None:
                         task['polls'] += 1
                         polls = task['polls']
                 if task is None:
                     return self.reply(404, {'error': 'no such task'})
-                if tail == '':
-                    if task['file'].startswith('fail'):
-                        return self.reply(200, {'task_id': tid, 'status': 'failed', 'error': 'parser crashed'})
-                    if task['file'].startswith('never') or polls < 3:
-                        return self.reply(200, {'task_id': tid, 'status': 'processing'})
-                    return self.reply(200, {'task_id': tid, 'status': 'completed'})
-                if tail == 'result':
-                    if query.get('response_format') == ['zip']:
-                        buf = io.BytesIO()
-                        with zipfile.ZipFile(buf, 'w') as z:
-                            z.writestr('content.md', '# parsed %s' % task['file'])
-                        return self.reply(200, buf.getvalue(), 'application/zip')
-                    return self.reply(200, {'task_id': tid, 'markdown': '# parsed %s' % task['file']})
+                answer = {'task_id': tid, 'output_formats': task['output_formats'] or ['default'],
+                          'files': [{'file_id': task['file_id'], 'file_name': task['file'],
+                                     'bytes': task['bytes'], 'status': 'waiting-file'}]}
+                if not task['uploaded']:
+                    return self.reply(200, dict(answer, status='waiting-file'))
+                if task['file'].startswith('fail'):
+                    answer['files'][0]['status'] = 'failed'
+                    return self.reply(200, dict(answer, status='failed', error={'code': 'parse_failed'}))
+                if task['file'].startswith('never') or polls < 3:
+                    return self.reply(200, dict(answer, status='pending'))
+                answer['files'][0]['status'] = 'completed'
+                # The upstream names absolute http://<upstream>/v1/ URLs; CPA does not rewrite them.
+                answer['files'][0]['result_url'] = '%s/files/%s/content' % (upstream, task['file_id'])
+                return self.reply(200, dict(answer, status='completed'))
+            if method == 'GET' and path.startswith('/tool/mineru/files/') and path.endswith('/content'):
+                fid = path[len('/tool/mineru/files/'):-len('/content')]
+                with mock.lock:
+                    names = [t['file'] for t in mock.tasks.values() if t['file_id'] == fid]
+                if not names:
+                    return self.reply(404, {'error': 'no such file'})
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, 'w') as z:
+                    z.writestr('markdown.md', '# parsed %s' % names[0])
+                return self.reply(200, buf.getvalue(), 'application/zip')
             return self.reply(404, {'error': 'not found'})
 
         def oxr(self, method, path, body):
@@ -370,9 +405,9 @@ class ToolCallTests(unittest.TestCase):
 
     # mineru
 
-    def test_mineru_submit_poll_and_download_zip(self):
+    def test_mineru_submit_upload_poll_and_download_zip(self):
         pdf = self.make_file('paper.pdf')
-        self.write_rows([{'id': 'p1', 'file': pdf, 'output_formats': ['markdown', 'zip']}])
+        self.write_rows([{'id': 'p1', 'file': pdf, 'tier': 'standard', 'output_formats': ['markdown', 'zip']}])
         outdir = self.root / 'results'
         result = self.batch('mineru', '--out-dir', str(outdir), '--poll-interval', '0.01')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -381,31 +416,51 @@ class ToolCallTests(unittest.TestCase):
         self.assertEqual(row['task_status'], 'completed')
         self.assertTrue(row['task_id'])
         self.assertEqual(row['result_file'], str(outdir / 'p1.zip'))
-        self.assertTrue((outdir / 'p1.zip').read_bytes().startswith(b'PK'))
         with zipfile.ZipFile(outdir / 'p1.zip') as z:
-            self.assertEqual(z.read('content.md'), b'# parsed paper.pdf')
+            self.assertEqual(z.read('markdown.md'), b'# parsed paper.pdf')
         submit, = self.posts('/tool/mineru/tasks')
-        self.assertEqual(submit['ctype'], 'application/octet-stream')
-        self.assertEqual(submit['body'], Path(pdf).read_bytes())
-        self.assertEqual(submit['query']['filename'], ['paper.pdf'])
-        self.assertEqual(submit['query']['tier'], ['advanced'])
-        self.assertEqual(submit['query']['output_formats'], ['markdown', 'zip'])
-        gets = [c for c in self.mock.calls if c['method'] == 'GET']
-        self.assertTrue(any(c['query'].get('response_format') == ['zip'] for c in gets))
+        self.assertEqual(submit['query'], {})
+        self.assertEqual(submit['ctype'], 'application/json')
+        self.assertEqual(json.loads(submit['body']), {
+            'files': [{'file_name': 'paper.pdf', 'bytes': len(Path(pdf).read_bytes())}], 'tier': 'standard'})
+        upload, = [c for c in self.mock.calls if c['method'] == 'PUT']
+        self.assertTrue(upload['path'].startswith('/tool/mineru/tasks/%s/uploads/' % row['task_id']))
+        self.assertEqual(upload['ctype'], 'application/octet-stream')
+        self.assertEqual(upload['body'], Path(pdf).read_bytes())
+        # The answers name http://127.0.0.1:18001/v1/... URLs; only their paths are used, so these calls reach the mock.
+        download, = [c for c in self.mock.calls if c['method'] == 'GET' and c['path'].endswith('/content')]
+        self.assertTrue(download['path'].startswith('/tool/mineru/files/'))
+        self.assertEqual(download['query'], {})
         self.assertTrue(all(c['auth'] == 'Bearer ' + KEY for c in self.mock.calls))
 
-    def test_mineru_without_zip_downloads_json(self):
-        pdf = self.make_file('doc.png', b'\x89PNG unit')
-        self.write_rows([{'id': 'j2', 'file': pdf}])
+    def test_mineru_default_tier_and_zip_result_without_output_formats(self):
+        png = self.make_file('doc.png', b'\x89PNG unit')
+        self.write_rows([{'id': 'j2', 'file': png}])
         outdir = self.root / 'results'
         result = self.batch('mineru', '--out-dir', str(outdir), '--poll-interval', '0.01')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.output_rows()[0]['result_file'], str(outdir / 'j2.json'))
-        self.assertEqual(json.loads((outdir / 'j2.json').read_text(encoding='utf-8'))['task_id'],
-                         self.output_rows()[0]['task_id'])
-        gets = [c for c in self.mock.calls if c['method'] == 'GET' and c['path'].endswith('/result')]
-        self.assertEqual(len(gets), 1)
-        self.assertNotIn('response_format', gets[0]['query'])
+        row, = self.output_rows()
+        self.assertEqual(row['result_file'], str(outdir / 'j2.zip'))
+        self.assertTrue((outdir / 'j2.zip').read_bytes().startswith(b'PK'))
+        submit, = self.posts('/tool/mineru/tasks')
+        body = json.loads(submit['body'])
+        self.assertEqual(body['tier'], 'advanced')
+        self.assertEqual(body['files'][0]['file_name'], 'doc.png')
+        self.assertNotIn('output_formats', body)
+
+    def test_mineru_upstream_output_formats_go_in_the_body_once_each(self):
+        self.write_rows([{'id': 'fm', 'file': self.make_file('fmt.pdf'), 'output_formats': ['docx', 'markdown', 'docx']}])
+        result = self.batch('mineru', '--out-dir', str(self.root / 'r'), '--poll-interval', '0.01')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        submit, = self.posts('/tool/mineru/tasks')
+        self.assertEqual(json.loads(submit['body'])['output_formats'], ['docx'])
+
+    def test_mineru_unknown_output_format_is_refused_before_any_call(self):
+        self.write_rows([{'id': 'bad', 'file': self.make_file('bad.pdf'), 'output_formats': ['json']}])
+        result = self.batch('mineru', '--out-dir', str(self.root / 'r'))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('not known', result.stderr)
+        self.assertEqual(self.mock.calls, [])
 
     def test_mineru_failed_task_is_recorded(self):
         self.write_rows([{'id': 'f1', 'file': self.make_file('fail.pdf')}])
@@ -455,7 +510,7 @@ class ToolCallTests(unittest.TestCase):
                            '--out-dir', str(outdir), '--poll-interval', '0.01')
         self.assertEqual(ok.returncode, 0, ok.stderr)
         self.assertEqual(sorted(r['id'] for r in self.output_rows()), ['one.pdf', 'two.pdf'])
-        self.assertTrue((outdir / 'one.pdf.json').exists())
+        self.assertTrue((outdir / 'one.pdf.zip').exists())
 
     def test_mineru_duplicate_command_line_names_are_refused(self):
         a = self.make_file('dup.pdf')
