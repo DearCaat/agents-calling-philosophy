@@ -19,7 +19,7 @@ from tools import ToolError
 
 NAME = 'oxr'
 DESCRIPTION = 'document parsing (OXR parser): one synchronous multipart call per file'
-DEFAULT_CONCURRENCY = 4
+DEFAULT_CONCURRENCY = 1
 DEFAULT_TIMEOUT = 3600.0
 MAX_FILE_BYTES = 200 << 20
 MAX_ERROR_CHARS = 600

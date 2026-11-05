@@ -30,7 +30,7 @@ tool-call.py mineru --file paper.pdf --out results.jsonl --out-dir ./parsed
 
 常用选项：
 
-- `-j N`：并发。默认 jev 1024、vela 64、mineru 4、oxr 4。客户端不替网关限流，排队与退避由服务端做。
+- `-j N`：并发。默认 jev 1024、vela 64、mineru 4、oxr 1。客户端不替网关限流，排队与退避由服务端做。
 - `--timeout S`：单个请求的秒数。jev、vela 默认 160；mineru 默认 3600，同时也是单个文件的总等待上限；oxr 默认 3600。
 - `--attempts N`：429 和 503 `model_warming` 的最多尝试次数，默认 8，按 `Retry-After` 退避。
 - `--stop-after-failures N`：连续失败 N 次后停止发起新请求，默认 10。
@@ -89,11 +89,11 @@ tool-call.py mineru --file paper.pdf --out results.jsonl --out-dir ./parsed
 
 - 入口：`POST /tool/oxr/parse/sync`，`multipart/form-data`。每个文件一次同步请求，结果直接写入 `--out-dir`。
 - 输入：JSONL 每行 `{"id", "file", "output_formats"?, "element_formats"?}`；或命令行 `--file PATH`（可重复，id 取文件名），此时必须给 `--out-dir`。`id` 规则同 mineru，它成为结果文件名。
-- `file` 是本地 PDF 或图片，整个读入内存，单个不超过 200 MiB，超过则发送前拒收。构造请求体时每个并发条目约占两倍文件大小的内存，并发 4 时注意。
+- `file` 是本地 PDF 或图片，整个读入内存，单个不超过 200 MiB，超过则发送前拒收。构造请求体时每个并发条目约占两倍文件大小的内存。
 - `output_formats`：`markdown`、`json` 的列表，默认两者都要。
 - `element_formats`：可选 JSON 对象，原样传给服务端；不写则用服务端默认值。`--element-formats '<json>'` 作用于整批，行内字段可覆盖它。
 - 输出：`<out-dir>/<id>.json` 为完整响应体；要求 markdown 时另写 `<out-dir>/<id>.md`。
 - 图片：Markdown 中的图片引用是计算节点上的文件路径，无法下载。文字、公式（LaTeX）、表格（默认 HTML；`element_formats` 的 `table` 设为 `markdown` 则为 Markdown 表）都已在结果中。图片的位置和 bbox 在 JSON 输出中类型为 `Picture` 的块里。2026-10-28 经 CPA 实测：`image` 设为 `base64` 时服务端接受，但 Markdown 里的图片仍是路径、没有内嵌，所以客户端不把它设为默认。
 - 错误：HTTP 200 而 `code` 不为 0 的（如 1133，参数错误）记为失败，`code` 与 `message` 原样记录。`503` 且 `code` 为 `model_warming` 按 `Retry-After` 重试；502、504 与超时不重放。
 - 输出 JSONL 每行记录：`id`、`ok`、`status`（HTTP 状态）、`code`、`message`、`pages`（`metadata.page_num`）、`processing_time_ms`、`markdown_file`、`json_file`、`attempts`、`latency_s`、`error`。
-- 默认 `-j 4`，`--timeout` 默认 3600 秒（单次请求）。吞吐有限；`-j` 超过 4 时请求在服务端排队，速度不会更快。
+- 默认 `-j 1`，`--timeout` 默认 3600 秒（单次请求）。吞吐有限；服务端一次只处理一个文件，`-j` 大于 1 时请求在 CPA 排队，超过 30 秒返回 429 后重试，速度不会更快。
