@@ -39,10 +39,8 @@ grok plugin install agents --trust
 export AGENTS_DATA_ROOT=$HOME/.agents/calling-data
 mkdir -p "$AGENTS_DATA_ROOT/local" "$AGENTS_DATA_ROOT/private"
 
-# 首次：从已安装插件拷模板
-PLUGIN=$(claude plugin list 2>/dev/null | true)  # 或手动定位 cache / marketplace 路径
-cp -R /path/to/agents/skills/calling-models/references/local.example/. \
-  "$AGENTS_DATA_ROOT/local/"
+# 首次：拷入模板。<插件目录> 换成本机已安装的 agents 插件根目录（其下应有 skills/calling-models/）
+cp -R <插件目录>/skills/calling-models/references/local.example/. "$AGENTS_DATA_ROOT/local/"
 
 # 填写 inventory；凭据只写这一处（不要提交）：
 #   $AGENTS_DATA_ROOT/private/credentials.env
@@ -57,7 +55,6 @@ $AGENTS_DATA_ROOT/
   local/                 # entries.md、api-routes.tsv、harnesses.md
   private/
     credentials.env
-    runtime/…            # 可选
 ```
 
 解析顺序（SKILL.md §1）：
@@ -66,9 +63,9 @@ $AGENTS_DATA_ROOT/
 2. `CLAUDE_PLUGIN_DATA` / `PLUGIN_DATA` / `GROK_PLUGIN_DATA`
 3. 插件树内 `references/local` + `private/`（兼容目录版安装）
 
-细覆盖：`AGENTS_LOCAL_ROOT`、`AGENTS_CREDENTIALS_FILE`、`AGENTS_CODEX_CATALOG_DIR`。
+细覆盖：`AGENTS_LOCAL_ROOT`、`AGENTS_CREDENTIALS_FILE`。
 
-## 更新（只更新哲学，不动本机数据）
+## 更新（只更新插件，不动本机数据）
 
 发布新版本：bump `.claude-plugin/plugin.json` 与 `.codex-plugin/plugin.json` 的 `version` 并推 `main`。已安装用户：
 
@@ -83,7 +80,11 @@ codex plugin add agents@agents-calling-philosophy
 ```
 
 然后开新 session（或 Claude Code `/reload-plugins`）。  
-`$AGENTS_DATA_ROOT` 在插件 cache 之外，**update / 重装哲学包不会覆盖** 本机清单与 credentials。
+`$AGENTS_DATA_ROOT` 在插件 cache 之外，**update / 重装插件不会覆盖** 本机清单与 credentials。
+
+## 改动何时生效
+
+入口表（`local/entries.md`）、路由表（`local/api-routes.tsv`）、`local/harnesses.md` 在数据目录里，调用时现读，改了立即生效。SKILL.md、references、脚本随插件版本走，更新后要 `/reload-plugins` 或开新会话。已打开的会话在那之前用的是旧版，`claude plugin list` 可看已安装版本。
 
 ## 仓库里有什么
 
@@ -94,5 +95,5 @@ codex plugin add agents@agents-calling-philosophy
 
 ## 仓库里没有什么
 
-- 无 `private/` 凭据或 runtime catalog
+- 无 `private/` 凭据
 - 无填好的 `references/local/` inventory
