@@ -12,12 +12,12 @@
     "agents",
     "models",
     "harnesses",
-    "calling-philosophy",
+    "calling-models",
     "llm-api"
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Agents Calling Philosophy",
+    "displayName": "Agents: Calling Models",
     "shortDescription": "Portable model calling reference and clients",
     "longDescription": "Look up a model name in a machine-local entry table, call LLM APIs and gateway tools through the portable clients, and report gaps without silent fallback.",
     "developerName": "DearCaat",

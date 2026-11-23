@@ -3,7 +3,7 @@
   "owner": {
     "name": "DearCaat"
   },
-  "description": "Portable agent calling philosophy marketplace (no machine credentials).",
+  "description": "Marketplace for the agents model-calling plugin",
   "plugins": [
     {
       "name": "agents",
