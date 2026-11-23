@@ -1,6 +1,6 @@
 # agents-calling-philosophy
 
-Portable **calling philosophy** plugin for choosing harness + model, effort/context defaults, and native sub-agent dispatch.
+Portable **model calling** plugin: a local entry table (`entries.md`) plus two JSONL clients: `llm-call.py` for direct LLM APIs and `tool-call.py` for gateway tools (jev, vela, mineru, oxr).
 
 本机 inventory 与凭据**不进本仓库**；挂在一个共享数据目录里，Claude Code / Codex / Grok 共用。
 
@@ -41,7 +41,7 @@ mkdir -p "$AGENTS_DATA_ROOT/local" "$AGENTS_DATA_ROOT/private"
 
 # 首次：从已安装插件拷模板
 PLUGIN=$(claude plugin list 2>/dev/null | true)  # 或手动定位 cache / marketplace 路径
-cp -R /path/to/agents/skills/executing-model-combinations/references/local.example/. \
+cp -R /path/to/agents/skills/calling-models/references/local.example/. \
   "$AGENTS_DATA_ROOT/local/"
 
 # 填写 inventory；凭据只写这一处（不要提交）：
@@ -54,13 +54,13 @@ cp -R /path/to/agents/skills/executing-model-combinations/references/local.examp
 
 ```text
 $AGENTS_DATA_ROOT/
-  local/                 # bindings.tsv、adapters.tsv、apis.md…
+  local/                 # entries.md、api-routes.tsv、harnesses.md
   private/
     credentials.env
     runtime/…            # 可选
 ```
 
-解析顺序（`scripts/lib/data-root.sh`）：
+解析顺序（SKILL.md §1）：
 
 1. `AGENTS_DATA_ROOT`（推荐）
 2. `CLAUDE_PLUGIN_DATA` / `PLUGIN_DATA` / `GROK_PLUGIN_DATA`
@@ -83,14 +83,14 @@ codex plugin add agents@agents-calling-philosophy
 ```
 
 然后开新 session（或 Claude Code `/reload-plugins`）。  
-`$AGENTS_DATA_ROOT` 在插件 cache 之外，**update / 重装哲学包不会覆盖** bindings 与 credentials。
+`$AGENTS_DATA_ROOT` 在插件 cache 之外，**update / 重装哲学包不会覆盖** 本机清单与 credentials。
 
 ## 仓库里有什么
 
-- Skill: `skills/executing-model-combinations/`
-- Reference: `references/{overview,executors,models,harnesses}.md`
-- Wrappers: `scripts/`（含 `lib/data-root.sh`）
-- Empty overlay template: `references/local.example/`
+- Skill: `skills/calling-models/`（`SKILL.md`，入口表的查法与两个客户端）
+- Reference: `references/llm-call.md`、`references/tools.md`
+- Scripts: `scripts/`（`llm-call.py`、`tool-call.py`、旧包装 `jev-call.py`、`tools/`）
+- Overlay template: `references/local.example/`（`api-routes.tsv`、`harnesses.md`、`entries.md`）
 
 ## 仓库里没有什么
 

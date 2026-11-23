@@ -6,5 +6,6 @@ private/
 .codex-marketplace-install.json
 runs/
 archive/
-skills/executing-model-combinations/references/local
+skills/calling-models/references/local
 *.bak-*
+__pycache__/

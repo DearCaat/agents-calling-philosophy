@@ -7,10 +7,11 @@ Each input line is one request:
 optional per line: "system" (overrides --system-file), "params" (merged into the body).
 
 Each output line is one result, appended as soon as it finishes:
-  id, ok, text, reasoning, parsed (--json), model (observed), tokens, usage (raw),
-  finish, latency_s, attempts, error, fp.
-tokens.reasoning is null when the route does not report a thinking-token count (Messages
-usually does not); whether the model thought is then seen in "reasoning".
+  id, ok, text, reasoning, parsed (--json), model (observed), requested_model, api,
+  protocol, tokens, usage (raw), finish, latency_s, attempts, t, error, fp.
+tokens.reasoning is 0 on chat and null on Messages when the route does not report a
+thinking-token count (Messages usually does not); whether the model thought is then seen
+in "reasoning".
 Rerunning with the same --out skips ids whose last record is ok and whose request
 fingerprint (protocol + full body) is unchanged; failed or changed ids run again.
 
@@ -24,20 +25,22 @@ requests; the per-item part goes last.
 
 Prefix caches live in each upstream (and account), so requests that share a prefix
 should reach the same one. Requests carry an X-Session-ID that a gateway can stick to:
-by default a hash of the request's system prompt, so one batch shares one id; set
+by default "llm-call-" plus the first 16 hex digits of the sha256 of the request's system
+prompt (a line's own system counts for that line), so one batch shares one id; set
 --session-id for multi-turn work whose shared prefix is in the messages. Requests
 without a system prompt and without --session-id carry none.
 
 Requests stream by default, so a stalled upstream is caught by --idle-timeout instead of
 waiting out the whole response, and --think-limit can stop a thinking loop as it happens.
-A timeout that arrives after minutes of waiting (HTTP 408/504/524, or no reply within
---timeout) is not resent: the same request would wait out the same limit again. A
+A timeout that arrives after more than 120 seconds of waiting (HTTP 408/504/524, or, with
+--no-stream, no reply within --timeout) is not resent: the same request would wait out the same limit again. A
 thinking runaway (output limit hit with an empty answer, or --think-limit passed) is
 resent once on the same route (--runaway-retries); it is usually a one-off.
 
 Standard library only. The route comes from --api (resolved in the local
-api-routes.tsv, credential read from the private credentials file and never
-printed) or from --base-url with --key-env.
+api-routes.tsv; credential read from the environment variable named by credential_ref,
+else from the private credentials file, and never printed) or from --base-url with
+--key-env.
 """
 import argparse
 import concurrent.futures as cf
@@ -391,7 +394,7 @@ def main():
     p.add_argument('--protocol', choices=['chat', 'messages'],
                    help='OpenAI Chat Completions or Anthropic Messages; default follows the route')
     p.add_argument('--system-file', help='shared system prompt for every request')
-    p.add_argument('--session-id', help="X-Session-ID for every request (default: hash of each request's system prompt)")
+    p.add_argument('--session-id', help="X-Session-ID for every request (default: 'llm-call-' plus the first 16 hex digits of the sha256 of each request's system prompt)")
     p.add_argument('--cache-system', action='store_true', help='messages protocol: mark the system prompt cache_control ephemeral')
     p.add_argument('--max-tokens', type=int,
                    help='output limit including thinking; none is sent unless set. '

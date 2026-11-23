@@ -1,9 +1,9 @@
 {
   "name": "agents",
-  "version": "0.1.32",
+  "version": "0.2.0",
   "homepage": "https://github.com/DearCaat/agents-calling-philosophy",
   "repository": "https://github.com/DearCaat/agents-calling-philosophy",
-  "description": "Portable calling philosophy for API + harness + model combinations; machine inventory is a local overlay.",
+  "description": "Portable model calling reference: local entry table plus llm-call and tool-call clients; machine inventory is a local overlay.",
   "author": {
     "name": "DearCaat"
   },
@@ -13,9 +13,9 @@
     "models",
     "harnesses",
     "calling-philosophy",
-    "dispatch"
+    "llm-api"
   ],
   "skills": [
-    "./skills/executing-model-combinations"
+    "./skills/calling-models"
   ]
 }
