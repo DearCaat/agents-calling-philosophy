@@ -1,6 +1,6 @@
 # agents-calling-philosophy
 
-Portable **model calling** plugin: a local entry table (`entries.md`) plus two JSONL clients: `llm-call.py` for direct LLM APIs and `tool-call.py` for gateway tools (jev, vela, mineru, oxr).
+Portable **model calling** plugin with the `agents_ask` MCP tool and two JSONL clients for direct LLM APIs and gateway tools (jev, vela, mineru, oxr).
 
 本机 inventory 与凭据**不进本仓库**；挂在一个共享数据目录里，Claude Code / Codex / Grok 共用。
 
@@ -31,7 +31,11 @@ grok plugin marketplace add DearCaat/agents-calling-philosophy
 grok plugin install agents --trust
 ```
 
-## 挂载本机数据（必做一次）
+## 查询调用入口
+
+调用插件工具 `agents_ask`，传入 `{"name":"gemini-4-neon"}`。查询直接读取私有仓库 `DearCaat/agents-local` 的当前入口表。参见[用法与认证](skills/calling-models/references/agents-query.md)。
+
+## 配置调用客户端的本机数据
 
 三家 harness **解析同一目录**：
 
@@ -57,7 +61,7 @@ $AGENTS_DATA_ROOT/
     credentials.env
 ```
 
-解析顺序（SKILL.md §1）：
+解析顺序（SKILL.md §3）：
 
 1. `AGENTS_DATA_ROOT`（推荐）
 2. `CLAUDE_PLUGIN_DATA` / `PLUGIN_DATA` / `GROK_PLUGIN_DATA`
@@ -84,13 +88,13 @@ codex plugin add agents@agents-calling-philosophy
 
 ## 改动何时生效
 
-入口表（`local/entries.md`）、路由表（`local/api-routes.tsv`）、`local/harnesses.md` 在数据目录里，调用时现读，改了立即生效。SKILL.md、references、脚本随插件版本走，更新后要 `/reload-plugins` 或开新会话。已打开的会话在那之前用的是旧版，`claude plugin list` 可看已安装版本。
+查询工具每次读取 GitHub 上的 `main`，调用客户端每次读取本地路由表。MCP 配置、SKILL.md、references、脚本随插件版本走，更新后要在 Claude Code 中运行 `/reload-plugins` 或开新会话。在 Codex 中开新会话，并核对工具列表里出现 `agents_ask`。
 
 ## 仓库里有什么
 
 - Skill: `skills/calling-models/`（`SKILL.md`，入口表的查法与两个客户端）
-- Reference: `references/llm-call.md`、`references/tools.md`
-- Scripts: `scripts/`（`llm-call.py`、`tool-call.py`、旧包装 `jev-call.py`、`tools/`）
+- Reference: `references/agents-query.md`、`references/llm-call.md`、`references/tools.md`
+- Scripts: `scripts/`（`agents-query.py`、`llm-call.py`、`tool-call.py`、旧包装 `jev-call.py`、`tools/`）
 - Overlay template: `references/local.example/`（`api-routes.tsv`、`harnesses.md`、`entries.md`）
 
 ## 仓库里没有什么

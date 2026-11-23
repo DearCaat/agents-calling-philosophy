@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agents": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/skills/calling-models/scripts/agents-mcp.py"]
+    }
+  }
+}

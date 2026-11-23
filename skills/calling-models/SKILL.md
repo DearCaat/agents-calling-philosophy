@@ -5,10 +5,12 @@ description: 需要用模型、用户点名某个执行者（如「gemini」「l
 
 # 调用模型
 
+`$SKILL` 为本 skill 目录。
+
 ## 1. 先查入口表
 
-- 入口表是本地清单目录下的 `entries.md`，每次调用时现读，不把表抄进本 skill。
-- 本地清单目录取 `AGENTS_LOCAL_ROOT`；未设时为数据根下的 `local/`。数据根依次取 `AGENTS_DATA_ROOT`、`CLAUDE_PLUGIN_DATA`、`PLUGIN_DATA`、`GROK_PLUGIN_DATA` 中第一个非空值；都未设时，清单目录为插件内 `references/local/`。
+- 用插件工具 `agents_ask` 查询 `DearCaat/agents-local` 的最新入口。宿主未加载 MCP 时，用 `python3 "$SKILL/scripts/agents-query.py" ask "说法"`。用法和认证见 [查询入口](references/agents-query.md)。
+- 委派给 harness 时，所有 harness 和模型都默认优先用当前 harness 的原生 sub-agent。先检查它能否满足指定的模型、effort 和任务环境。用户指定其他 harness，或当前 harness 的原生派发无法满足要求时，再查外部入口。派发后核对实际模型和 effort。
 - 表里没有这个说法：报告缺口，不拿名字相近的模型顶替。
 
 ## 2. 两个客户端
@@ -21,10 +23,11 @@ python3 "$SKILL/scripts/llm-call.py" --in items.jsonl --out results.jsonl --api 
 python3 "$SKILL/scripts/tool-call.py" jev --in items.jsonl --out results.jsonl --model <模型 id>
 ```
 
-`$SKILL` 为本 skill 目录；`<api_id>` 从路由表取（见第 3 节）；模型名以网关文档与实时接口为准。
+`<api_id>` 从路由表取（见第 3 节）。模型名以网关文档与实时接口为准。
 
 ## 3. 路由与凭据
 
+- 两个调用客户端的本地清单目录取 `AGENTS_LOCAL_ROOT`。未设时为数据根下的 `local/`。数据根依次取 `AGENTS_DATA_ROOT`、`CLAUDE_PLUGIN_DATA`、`PLUGIN_DATA`、`GROK_PLUGIN_DATA` 中第一个非空值。都未设时，清单目录为插件内 `references/local/`。
 - 路由表：清单目录下的 `api-routes.tsv`。`llm-call.py --api` 按 api_id 查，必须恰好一行；base_url 为 `-`、认证不是 bearer、或状态为 unavailable 的行直接拒绝。
 - 凭据变量名写在 `api-routes.tsv` 的 `credential_ref` 列。`llm-call.py` 先取同名环境变量，再从凭据文件按 `NAME=value` 读；`tool-call.py` 另认 `env:`、`file:` 前缀。
 - 凭据文件：`AGENTS_CREDENTIALS_FILE`；未设时为数据根下的 `private/credentials.env`。

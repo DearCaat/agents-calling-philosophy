@@ -8,8 +8,8 @@
     {
       "name": "agents",
       "source": "./",
-      "description": "Look up local model entries and call LLM APIs and gateway tools through portable clients.",
-      "version": "0.2.0"
+      "description": "Look up current model entries and call LLM APIs and gateway tools through portable clients.",
+      "version": "0.2.1"
     }
   ]
 }

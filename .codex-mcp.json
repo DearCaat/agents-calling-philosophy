@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "agents": {
+      "command": "python3",
+      "args": ["./skills/calling-models/scripts/agents-mcp.py"],
+      "cwd": ".",
+      "env_vars": ["AGENTS_DATA_ROOT", "GIT_SSH_COMMAND", "GIT_SSH", "SSH_AUTH_SOCK"]
+    }
+  }
+}
