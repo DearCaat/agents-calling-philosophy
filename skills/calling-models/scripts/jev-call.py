@@ -50,7 +50,10 @@ def resolve_route(api):
     import urllib.parse
     tc = _tool_call()
     _, credentials_file = tc.data_paths()
-    rows = tc.route_rows()
+    # library entry (web-mcp imports it): keep RuntimeError, never SystemExit from the CLI's die()
+    rows, note = tc._routes().route_rows(os.path.dirname(os.path.realpath(tc.__file__)))
+    if note:
+        print('jev-call: ' + note, file=sys.stderr)
     matches = [r for r in rows if r and r[0] == api]
     if len(matches) != 1:
         raise RuntimeError('unregistered or duplicate API route: ' + api)

@@ -37,13 +37,15 @@ grok plugin install agents --trust
 
 ## 配置调用客户端的本机数据
 
-三家 harness **解析同一目录**：
+只装插件时只需放凭据：`~/.config/agents/credentials.env`（`NAME=value`，权限 600）。旧版默认放在插件目录 `private/credentials.env` 的安装照旧可用，但插件目录随版本变，升级前把它移到 `~/.config/agents/`。
+
+下面的数据目录是**可选的本机覆盖**：要固定本机自己的路由表时才挂。入口查询（`agents_ask`）总是读远端 `agents-local` 的入口表，数据目录只为它提供 Git 认证（`.git/config` 的 `core.sshCommand`），本地 `entries.md` 不覆盖它。三家 harness **解析同一目录**：
 
 ```bash
 export AGENTS_DATA_ROOT=$HOME/.agents/calling-data
 mkdir -p "$AGENTS_DATA_ROOT/local" "$AGENTS_DATA_ROOT/private"
 
-# 首次：拷入模板。<插件目录> 换成本机已安装的 agents 插件根目录（其下应有 skills/calling-models/）
+# 可选：拷入模板，其中 api-routes.tsv 覆盖远端路由表。<插件目录> 换成本机已安装的 agents 插件根目录（其下应有 skills/calling-models/）
 cp -R <插件目录>/skills/calling-models/references/local.example/. "$AGENTS_DATA_ROOT/local/"
 
 # 填写 inventory；凭据只写这一处（不要提交）：
@@ -63,9 +65,10 @@ $AGENTS_DATA_ROOT/
 
 解析顺序（SKILL.md §3）：
 
-1. `AGENTS_DATA_ROOT`（推荐）
+1. `AGENTS_DATA_ROOT`
 2. `CLAUDE_PLUGIN_DATA` / `PLUGIN_DATA` / `GROK_PLUGIN_DATA`
-3. 插件树内 `references/local` + `private/`（兼容目录版安装）
+3. 插件树内 `references/local`（兼容目录版安装）
+4. 路由表：以上都没有 `api-routes.tsv` 时取私库 `agents-local` 的表（先 SSH 后 https，缓存一小时，stderr 写明来源）；凭据：没有数据根时为 `~/.config/agents/credentials.env`
 
 细覆盖：`AGENTS_LOCAL_ROOT`、`AGENTS_CREDENTIALS_FILE`。
 

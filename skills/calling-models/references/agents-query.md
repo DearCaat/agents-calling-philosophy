@@ -11,4 +11,4 @@ python3 "$SKILL/scripts/agents-query.py" show harnesses
 
 `show` 读取整份参考，接受 `entries`、`routes` 或 `harnesses`。正文写到 stdout，来源提交写到 stderr。
 
-查询通过 Git SSH 访问 `DearCaat/agents-local`，需要私库读取权限。可用 `GIT_SSH_COMMAND` 指定现有认证方式。已经配置数据根的机器可复用该 Git 仓库的 `core.sshCommand`，查询内容始终取自远端 `main`。
+查询通过 Git 访问 `DearCaat/agents-local`，先 SSH、不通再 https，需要私库读取权限（与网关的 bearer 凭据是两项配置）。可用 `GIT_SSH_COMMAND` 指定现有认证方式。已经配置数据根的机器可复用该 Git 仓库的 `core.sshCommand`，查询内容始终取自远端 `main`。

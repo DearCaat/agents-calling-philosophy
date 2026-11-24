@@ -62,7 +62,7 @@ def dispatch(method, params):
         return {"result": {
             "protocolVersion": version,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "agents", "version": "0.2.1"},
+            "serverInfo": {"name": "agents", "version": "0.2.2"},
         }}
     if method == "tools/list":
         return {"result": {"tools": [TOOL]}}

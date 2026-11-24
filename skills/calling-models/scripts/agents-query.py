@@ -2,9 +2,11 @@
 """Query the current model entry table in the private agents-local repository."""
 
 import argparse
+import locale
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -21,7 +23,71 @@ TABLES = {
 }
 
 
-def read_table(path):
+class MissingFile(RuntimeError):
+    """The fetched commit has no file at the requested path (checked with git ls-tree)."""
+
+
+def _kill_tree(process):
+    """Kill the process and everything it started (its process group, or its tree on Windows), then reap it.
+    Bounded to about one second in total, so that the next transport still gets most of its share."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.7)
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        process.kill()
+    except OSError:
+        pass
+    try:
+        process.wait(timeout=0.3)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _newlines(text):
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _run(args, *, timeout, env, check=True, encoding="utf-8"):
+    """subprocess.run for Git steps. Output goes to temporary files, not pipes, so a descendant that keeps a
+    handle open cannot hold the caller past the timeout; on timeout or interrupt (Ctrl-C) the whole process
+    tree is killed. Output is decoded only after the command finished, so a timeout is always reported as
+    TimeoutExpired. Returns CompletedProcess with text stdout/stderr."""
+    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        process = subprocess.Popen(args, env=env, stdout=out, stderr=err, **group)
+        try:
+            process.wait(timeout=timeout)
+        except BaseException:  # TimeoutExpired, KeyboardInterrupt
+            _kill_tree(process)
+            raise
+        out.seek(0)
+        err.seek(0)
+        # same newline handling as text=True (universal newlines): \r\n and \r become \n
+        stdout = _newlines(out.read().decode(encoding))
+        stderr = _newlines(err.read().decode(encoding, "replace"))
+    if check and process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, args, stdout, stderr)
+    return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+
+
+def read_table(path, deadline=None):
+    """Return (commit, text). deadline is a time.monotonic() value bounding all Git steps together;
+    SSH may use at most half of what is left, so https still gets a chance when SSH hangs."""
+    import time
+
+    def left(share=1.0):
+        if deadline is None:
+            return 20
+        remain = deadline - time.monotonic()
+        if remain <= 0:
+            raise subprocess.TimeoutExpired("git", 0)
+        return min(20, remain * share)
+
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     ssh_config = next(
         (
@@ -33,34 +99,33 @@ def read_table(path):
     )
     if "GIT_SSH_COMMAND" not in env and "GIT_SSH" not in env and ssh_config and ssh_config.is_file():
         # Reuse the configured Git authentication without opening the local inventory.
-        ssh = subprocess.run(
+        ssh = _run(
             ["git", "config", "--file", str(ssh_config), "--get", "core.sshCommand"],
-            env=env, capture_output=True, text=True, timeout=5,
+            env=env, timeout=min(5, left()), check=False,
+            encoding=locale.getpreferredencoding(False),  # git config prints values in the local encoding
         )
         if ssh.returncode == 0 and ssh.stdout.strip():
             env["GIT_SSH_COMMAND"] = ssh.stdout.strip()
     if "GIT_SSH" not in env:
-        env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+        env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=5")
 
     with tempfile.TemporaryDirectory(prefix="agents-query-") as directory:
         git = ["git", "--git-dir", directory]
-        options = dict(env=env, capture_output=True, text=True, encoding="utf-8", timeout=20, check=True)
-        subprocess.run(git + ["init", "--bare", "--quiet"], **options)
+        _run(git + ["init", "--bare", "--quiet"], env=env, timeout=left())
         try:
-            subprocess.run(
-                git + ["fetch", "--quiet", "--depth=1", "--no-tags", REMOTE, "refs/heads/main"],
-                **options,
-            )
+            _run(git + ["fetch", "--quiet", "--depth=1", "--no-tags", REMOTE, "refs/heads/main"],
+                 env=env, timeout=left(0.5))
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            subprocess.run(
-                git + ["fetch", "--quiet", "--depth=1", "--no-tags", REMOTE_HTTPS, "refs/heads/main"],
-                **options,
-            )
-        commit = subprocess.run(git + ["rev-parse", "FETCH_HEAD"], **options).stdout.strip()
+            _run(git + ["fetch", "--quiet", "--depth=1", "--no-tags", REMOTE_HTTPS, "refs/heads/main"],
+                 env=env, timeout=left())
+        commit = _run(git + ["rev-parse", "FETCH_HEAD"], env=env, timeout=left()).stdout.strip()
+        listed = _run(git + ["ls-tree", "--name-only", commit, "--", path], env=env, timeout=left()).stdout
+        if not listed.strip():
+            raise MissingFile(f"该提交里没有这个文件。\n{SOURCE}/{commit}/{path}")
         try:
-            table = subprocess.run(git + ["show", f"{commit}:{path}"], **options).stdout
+            table = _run(git + ["show", f"{commit}:{path}"], env=env, timeout=left()).stdout
         except subprocess.CalledProcessError:
-            raise RuntimeError(f"无法读取该提交的文件。\n{SOURCE}/{commit}/{path}") from None
+            raise RuntimeError(f"无法读取该提交中的文件。\n{SOURCE}/{commit}/{path}") from None
     return commit, table
 
 

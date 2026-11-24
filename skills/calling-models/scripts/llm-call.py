@@ -460,13 +460,26 @@ def main():
     think = ', '.join('%s=%s' % (f, json.dumps(a.param[f])) for f in ('reasoning_effort', 'thinking') if f in a.param) \
         or ('off (--no-think)' if a.no_think else '%s=%s (default, unless a line sets its own)' % (k, json.dumps(v)))
     base = base.rstrip('/')
+    # urllib and http.client echo the whole URL in their exceptions, so a URL that carries user:password@
+    # (or might, being malformed) is refused here with fixed text, before anything parses or prints it.
+    if '@' in base:
+        die('base URL must not contain "@" (user:password@ credentials); use a bearer key instead')
+    if '?' in base or '#' in base:
+        die('base URL must not contain a query or fragment (a key in ?api_key= would be printed); use a bearer key instead')
+    try:
+        parsed = urllib.parse.urlsplit(base)
+        parsed.port
+    except ValueError:
+        die('base URL is not a valid URL (scheme://host[:port]/path)')
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+        die('base URL is not a valid URL (scheme://host[:port]/path)')
     url = base + ('/chat/completions' if a.protocol == 'chat' else '/messages')
     headers = {'Content-Type': 'application/json'}
     if a.protocol == 'chat':
         headers['Authorization'] = 'Bearer ' + key
     else:
         headers.update({'x-api-key': key, 'Authorization': 'Bearer ' + key, 'anthropic-version': '2023-06-01'})
-    host = urllib.parse.urlparse(base).hostname
+    host = parsed.hostname
     opener = urllib.request.build_opener(*([urllib.request.ProxyHandler({})] if host in ('127.0.0.1', 'localhost', '::1') else []))
 
     system = open(a.system_file, encoding='utf-8').read() if a.system_file else None
