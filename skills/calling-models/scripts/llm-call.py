@@ -79,21 +79,29 @@ def die(msg):
 def data_paths():
     skill = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     plugin = os.path.dirname(os.path.dirname(skill))
-    root = next((os.environ[k] for k in ('AGENTS_DATA_ROOT', 'CLAUDE_PLUGIN_DATA', 'PLUGIN_DATA', 'GROK_PLUGIN_DATA')
-                 if os.environ.get(k)), '')
-    local = os.environ.get('AGENTS_LOCAL_ROOT') or (os.path.join(root, 'local') if root else os.path.join(skill, 'references', 'local'))
-    creds = os.environ.get('AGENTS_CREDENTIALS_FILE') or os.path.join(root or plugin, 'private', 'credentials.env')
-    return local, creds
+    r = _routes()
+    return r.local_dir(skill), r.credentials_file(plugin)
+
+
+def _routes():
+    """routes.py beside this script (loaded by path: callers may run python3 -I)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'agents_routes', os.path.join(os.path.dirname(os.path.realpath(__file__)), 'routes.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def resolve_route(api):
-    local, creds = data_paths()
-    path = os.path.join(local, 'api-routes.tsv')
+    _, creds = data_paths()
     try:
-        rows = [l.rstrip('\n').split('\t') for l in open(path, encoding='utf-8') if l.strip() and not l.startswith('#')]
-    except OSError:
-        die('route registry is not readable: ' + path)
-    rows = [r for r in rows if r[0] == api]
+        rows, note = _routes().route_rows(os.path.dirname(os.path.realpath(__file__)))
+    except RuntimeError as e:
+        die(str(e))
+    if note:
+        print('llm-call: ' + note, file=sys.stderr)
+    rows = [r for r in rows if r and r[0] == api]
     if len(rows) != 1:
         die('unregistered API route: ' + api)
     _, base, wire, cred, _, auth, state = rows[0][:7]

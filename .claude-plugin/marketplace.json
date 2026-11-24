@@ -9,7 +9,7 @@
       "name": "agents",
       "source": "./",
       "description": "Look up current model entries and call LLM APIs and gateway tools through portable clients.",
-      "version": "0.2.1"
+      "version": "0.2.2"
     }
   ]
 }

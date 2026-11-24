@@ -41,7 +41,7 @@ tool-call.py mineru --file paper.pdf --out results.jsonl --out-dir ./parsed
 
 重试规则：429 与 503 `model_warming` 按 `Retry-After` 退避后重试；其他状态（包括 502、504）与超时不重放，记为失败，因为服务端可能仍在处理。
 
-路由与凭据：`--api` 默认 `tool`，从本机清单 `local/api-routes.tsv` 解析。凭据只按清单引用，任何输出（包括错误信息）都不含凭据值。
+路由与凭据：`--api` 默认 `tool`，从本机清单 `local/api-routes.tsv` 解析；本机没有时从 `agents-local` 现取并缓存（见 SKILL.md §3）。凭据只按清单引用，任何输出（包括错误信息）都不含凭据值。
 
 ## jev
 

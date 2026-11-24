@@ -2,7 +2,7 @@
 
 Portable **model calling** plugin with the `agents_ask` MCP tool and two JSONL clients for direct LLM APIs and gateway tools (jev, vela, mineru, oxr).
 
-本机 inventory 与凭据**不进本仓库**；挂在一个共享数据目录里，Claude Code / Codex / Grok 共用。
+本机 inventory 与凭据**不进本仓库**。只装插件即可调用：路由表本机没有时从私有仓库 `agents-local` 现取并缓存（需该私库读取权限）；每台机器只需放好凭据（`~/.config/agents/credentials.env`，或数据根下 `private/credentials.env`）。要覆盖路由时再挂数据目录，Claude Code / Codex / Grok 共用。
 
 ## 安装
 
@@ -88,7 +88,7 @@ codex plugin add agents@agents-calling-philosophy
 
 ## 改动何时生效
 
-查询工具每次读取 GitHub 上的 `main`，调用客户端每次读取本地路由表。MCP 配置、SKILL.md、references、脚本随插件版本走，更新后要在 Claude Code 中运行 `/reload-plugins` 或开新会话。在 Codex 中开新会话，并核对工具列表里出现 `agents_ask`。
+查询工具每次读取 GitHub 上的 `main`；调用客户端读本地路由表，本机没有时读 `agents-local` 的 `main` 并缓存一小时。MCP 配置、SKILL.md、references、脚本随插件版本走，更新后要在 Claude Code 中运行 `/reload-plugins` 或开新会话。在 Codex 中开新会话，并核对工具列表里出现 `agents_ask`。
 
 ## 仓库里有什么
 

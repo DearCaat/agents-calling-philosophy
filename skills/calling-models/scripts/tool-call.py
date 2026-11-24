@@ -8,7 +8,8 @@
 Tools (jev, vela, mineru, oxr) are modules in tools/; this file holds no tool-specific fields
 or rules. An input line is one JSON object with an "id" and the tool's own fields. Results
 are appended to --out as each item finishes; on rerun, ids that already have ok=true there
-are skipped. The route comes from --api in local/api-routes.tsv (wire cpa-tool). Requests
+are skipped. The route comes from --api in local/api-routes.tsv (wire cpa-tool); without a local copy it is
+read from the private agents-local repository and cached (see routes.py). Requests
 bypass environment proxies. Credentials are never printed.
 """
 import argparse
@@ -51,14 +52,29 @@ def data_paths():
     script_dir = os.path.dirname(os.path.realpath(__file__))
     skill_dir = os.path.dirname(script_dir)
     plugin_dir = os.path.dirname(os.path.dirname(skill_dir))
-    root = next((os.environ[k] for k in
-                 ('AGENTS_DATA_ROOT', 'CLAUDE_PLUGIN_DATA', 'PLUGIN_DATA', 'GROK_PLUGIN_DATA')
-                 if os.environ.get(k)), '')
-    local = os.environ.get('AGENTS_LOCAL_ROOT') or (
-        os.path.join(root, 'local') if root else os.path.join(skill_dir, 'references', 'local'))
-    creds = os.environ.get('AGENTS_CREDENTIALS_FILE') or os.path.join(
-        root or plugin_dir, 'private', 'credentials.env')
-    return local, creds
+    r = _routes()
+    return r.local_dir(skill_dir), r.credentials_file(plugin_dir)
+
+
+def route_rows():
+    """Route registry rows; a registry not read from the local file is announced on stderr."""
+    try:
+        rows, note = _routes().route_rows(os.path.dirname(os.path.realpath(__file__)))
+    except RuntimeError as e:
+        die(str(e))
+    if note:
+        print('tool-call: ' + note, file=sys.stderr)
+    return rows
+
+
+def _routes():
+    """routes.py beside this script (loaded by path: callers may run python3 -I)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'agents_routes', os.path.join(os.path.dirname(os.path.realpath(__file__)), 'routes.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def read_credential(ref, credentials_file):
@@ -94,14 +110,8 @@ def read_credential(ref, credentials_file):
 
 def resolve_route(api):
     """Return (base, key) for an api_id of wire cpa-tool; base ends with /tool."""
-    local, credentials_file = data_paths()
-    path = os.path.join(local, 'api-routes.tsv')
-    try:
-        with open(path, encoding='utf-8') as f:
-            rows = [line.rstrip('\r\n').split('\t') for line in f
-                    if line.strip() and not line.lstrip().startswith('#')]
-    except OSError:
-        die('route registry is not readable: ' + path)
+    _, credentials_file = data_paths()
+    rows = route_rows()
     matches = [r for r in rows if r and r[0] == api]
     if len(matches) != 1:
         die('unregistered or duplicate API route: ' + api)

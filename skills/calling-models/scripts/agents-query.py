@@ -12,6 +12,7 @@ import unicodedata
 
 
 REMOTE = "git@github.com:DearCaat/agents-local.git"
+REMOTE_HTTPS = "https://github.com/DearCaat/agents-local.git"  # SSH 不通的机器（只配了 https Git 认证）
 SOURCE = "https://github.com/DearCaat/agents-local/blob"
 TABLES = {
     "entries": "local/entries.md",
@@ -45,10 +46,16 @@ def read_table(path):
         git = ["git", "--git-dir", directory]
         options = dict(env=env, capture_output=True, text=True, encoding="utf-8", timeout=20, check=True)
         subprocess.run(git + ["init", "--bare", "--quiet"], **options)
-        subprocess.run(
-            git + ["fetch", "--quiet", "--depth=1", "--no-tags", REMOTE, "refs/heads/main"],
-            **options,
-        )
+        try:
+            subprocess.run(
+                git + ["fetch", "--quiet", "--depth=1", "--no-tags", REMOTE, "refs/heads/main"],
+                **options,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            subprocess.run(
+                git + ["fetch", "--quiet", "--depth=1", "--no-tags", REMOTE_HTTPS, "refs/heads/main"],
+                **options,
+            )
         commit = subprocess.run(git + ["rev-parse", "FETCH_HEAD"], **options).stdout.strip()
         try:
             table = subprocess.run(git + ["show", f"{commit}:{path}"], **options).stdout

@@ -28,9 +28,9 @@ python3 "$SKILL/scripts/tool-call.py" jev --in items.jsonl --out results.jsonl -
 ## 3. 路由与凭据
 
 - 两个调用客户端的本地清单目录取 `AGENTS_LOCAL_ROOT`。未设时为数据根下的 `local/`。数据根依次取 `AGENTS_DATA_ROOT`、`CLAUDE_PLUGIN_DATA`、`PLUGIN_DATA`、`GROK_PLUGIN_DATA` 中第一个非空值。都未设时，清单目录为插件内 `references/local/`。
-- 路由表：清单目录下的 `api-routes.tsv`。`llm-call.py --api` 按 api_id 查，必须恰好一行；base_url 为 `-`、认证不是 bearer、或状态为 unavailable 的行直接拒绝。
+- 路由表：清单目录下的 `api-routes.tsv`；本机没有这份时，客户端从私有仓库 `agents-local` 现取（同 `agents_ask` 的认证，先 SSH 后 https），缓存一小时，在 stderr 写明取自哪个提交或缓存；远端取不到时用旧缓存并写明。只装插件的机器不用另放清单。`llm-call.py --api` 按 api_id 查，必须恰好一行；base_url 为 `-`、认证不是 bearer、或状态为 unavailable 的行直接拒绝。
 - 凭据变量名写在 `api-routes.tsv` 的 `credential_ref` 列。`llm-call.py` 先取同名环境变量，再从凭据文件按 `NAME=value` 读；`tool-call.py` 另认 `env:`、`file:` 前缀。
-- 凭据文件：`AGENTS_CREDENTIALS_FILE`；未设时为数据根下的 `private/credentials.env`。
+- 凭据文件：`AGENTS_CREDENTIALS_FILE`；未设时为数据根下的 `private/credentials.env`；没有数据根时为 `~/.config/agents/credentials.env`。凭据是各机器唯一必须本地放的东西。
 - 凭据值不进 prompt、文档、回显或仓库。
 
 ## 4. 指针

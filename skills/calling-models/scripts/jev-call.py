@@ -49,11 +49,8 @@ def resolve_route(api):
     """Return (base, key, state) for an api_id; base ends without a trailing slash."""
     import urllib.parse
     tc = _tool_call()
-    local, credentials_file = tc.data_paths()
-    path = os.path.join(local, 'api-routes.tsv')
-    with open(path, encoding='utf-8') as f:
-        rows = [line.rstrip('\r\n').split('\t') for line in f
-                if line.strip() and not line.lstrip().startswith('#')]
+    _, credentials_file = tc.data_paths()
+    rows = tc.route_rows()
     matches = [r for r in rows if r and r[0] == api]
     if len(matches) != 1:
         raise RuntimeError('unregistered or duplicate API route: ' + api)
