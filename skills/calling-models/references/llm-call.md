@@ -41,7 +41,7 @@
 
 - `-j` 大于 1 时，先串行发前 `--warmup` 条，再并发发其余。
 - 理由：厂商要先见过一个前缀才会存下它，同时发出的请求会一起落空。例如 DeepSeek 从第三次请求起持久化前缀，Anthropic 在首个响应开始后。
-- 连续失败的条目达到 `--stop-after-failures` 时，停止发起新请求。
+- 连续失败的条目达到 `--stop-after-failures` 时，停止发起新请求。若某条路由反复限流、超时或触发连续失败停机，在核对已授权通道清单（`api-routes.tsv` 与备注）及并发上限后改走备用路由，不在同一受阻通道上死等（单个条目的思考失控则仍按上节只在同路由重发一次）。
 
 ## 缓存
 
@@ -60,4 +60,5 @@ Gemini 不走本脚本（2026-10-25 本机所有者定，账号安全）；脚�
 
 ## 与 tool-call.py 的分工
 
-判定模型 jev、vela，以及 mineru、oxr 走 `tool-call.py`，用法见 `references/tools.md`。旧的 `jev-call.py` 仍可用，内部转调 `tool-call.py jev`。
+- 批量分类、筛选、打分先在 `tool-call.py jev` 上调优问法、选项和输入（如切图、局部上下文），实测精召仍不达标时再升级到本脚本；`jev`、`vela` 及 `mineru`、`oxr` 均走 `tool-call.py`，用法见 `references/tools.md`（旧的 `jev-call.py` 仍可用，内部转调 `tool-call.py jev`）。
+- 除上节「Gemini 不经本脚本」等文档明确列出的例外外，所有直接调 LLM API 的批量调用统一走 `scripts/llm-call.py`，不另写平行封装或自建请求循环，以保留默认思考开关、前缀预热、流式空闲超时与断线续跑保护。
