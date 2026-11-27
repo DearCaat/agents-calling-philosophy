@@ -45,6 +45,7 @@ tool-call.py mineru --file paper.pdf --out results.jsonl --out-dir ./parsed
 
 ## jev
 
+- 适用与调优：分类、筛选、打分等成批判定优先用 `jev`（单价低、输出概率、可复现）。效果不理想时先改问法、收紧选项定义或补齐必要输入（如局部上下文、裁剪或切图传 `images`）；实测调优后精度或召回仍不足，再改用 LLM API。
 - 入口：`POST /tool/jev/systemone`。
 - 输入：`state` 为字符串；`questions` 为非空对象，题型为 noul、choice、score；`model` 写在行内或用 `--model`；可选 `images`，为图片文件路径或 base64 data URI，`--max-side PIXELS` 可先缩小（需要 Pillow）。
 - 发送前本地拒收（整批都不发送）：`state` 是对象；任一题 `type` 为 `span`；模型名带上游前缀。模型名只写 id，上游由 CPA 选择。对象 state 和 span 题改用 `vela`。

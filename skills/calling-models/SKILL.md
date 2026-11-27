@@ -10,11 +10,15 @@ description: 需要用模型、用户点名某个执行者（如「gemini」「l
 ## 1. 先查入口表
 
 - 用插件工具 `agents_ask` 查询 `DearCaat/agents-local` 的最新入口。宿主未加载 MCP 时，用 `python3 "$SKILL/scripts/agents-query.py" ask "说法"`。用法和认证见 [查询入口](references/agents-query.md)。
-- 委派给 harness 时，所有 harness 和模型都默认优先用当前 harness 的原生 sub-agent。先检查它能否满足指定的模型、effort 和任务环境。用户指定其他 harness，或当前 harness 的原生派发无法满足要求时，再查外部入口。派发后核对实际模型和 effort。
+- 委派给 harness 时，优先使用当前宿主的原生 sub-agent（前提是满足指定模型、effort 与环境）；仅在用户指定其他 harness 或原生派发无法满足时再查外部入口。
+- **显式指定模型并核对**：派发 sub-agent 或外部 CLI 时务必显式传入目标模型（及所需 effort）。不少宿主在省略模型参数时会默认继承主会话的高成本旗舰模型，不会自动切到轻量模型。派发后通过派发回执/工具返回元数据、任务运行日志或宿主界面状态核对实际生效的模型与 effort，不符预期时及时调整或重派。
+- **阻塞及时切换**：单条通道或单个执行者长时间无响应、反复超时或限流（429），或明显拖慢整体进度时，及时改派其他执行者或切换备用通道，不要在同一阻塞点空等；切往付费通道前，先核对已授权通道清单（入口表 / `api-routes.tsv` 及备注）与并发上限。
 - 表里没有这个说法：报告缺口，不拿名字相近的模型顶替。
 
 ## 2. 两个客户端
 
+- **判定器优先**：分类、筛选、打分等成批判定优先用 `scripts/tool-call.py jev`（成本低、可出概率、可复现）。初版效果不够时不要直接改调大模型，先改问法、收紧选项边界或补齐必要输入（如切图、局部上下文）；实测调优后精召仍不达标时再升级直接调 LLM API。
+- **统一 API 入口**：直接调 LLM API 的批量任务统一走 `scripts/llm-call.py`（`references/llm-call.md` 明示例外除外），不另写平行封装或临时请求循环。
 - `scripts/llm-call.py`：直接调 LLM API 的 JSONL 批量客户端，协议为 Chat 或 Messages，并发、重试、续跑。用法见 `references/llm-call.md` 与 `--help`。
 - `scripts/tool-call.py`：调 CPA 工具网关 `/tool/<name>` 的 JSONL 批量客户端，工具为 jev、vela、mineru、oxr，另可只读查询。用法见 `references/tools.md` 与 `--help`。
 
@@ -32,6 +36,7 @@ python3 "$SKILL/scripts/tool-call.py" jev --in items.jsonl --out results.jsonl -
 - 凭据变量名写在 `api-routes.tsv` 的 `credential_ref` 列。`llm-call.py` 先取同名环境变量，再从凭据文件按 `NAME=value` 读；`tool-call.py` 另认 `env:`、`file:` 前缀。
 - 凭据文件：`AGENTS_CREDENTIALS_FILE`；未设时为数据根下的 `private/credentials.env`；没有数据根时为 `~/.config/agents/credentials.env`（只有旧默认位置插件目录下 `private/credentials.env` 的安装照旧用它，升级前把它移到新位置）。凭据是各机器唯一必须本地放的东西。
 - 凭据值不进 prompt、文档、回显或仓库。
+- **冷热更新与版本核对**：插件更新后，长会话中 MCP 进程、`SKILL.md` front matter 描述与按版本目录固定的技能快照均属冷生效，需重载插件或重开会话；客户端脚本在同一目录下修改时下次子进程即生效，未设本地覆盖表时远端路由缓存（`~/.cache/agents/api-routes.json`）1 小时内沿用旧值（删除可立即刷新）。核对实际版本见 `README.md`「改动何时生效」，路由表提交号看客户端 stderr 输出。
 
 ## 4. 指针
 

@@ -91,7 +91,21 @@ codex plugin add agents@agents-calling-philosophy
 
 ## 改动何时生效
 
-查询工具每次读取 GitHub 上的 `main`；调用客户端读本地路由表，本机没有时读 `agents-local` 的 `main` 并缓存一小时。MCP 配置、SKILL.md、references、脚本随插件版本走，更新后要在 Claude Code 中运行 `/reload-plugins` 或开新会话。在 Codex 中开新会话，并核对工具列表里出现 `agents_ask`。
+### 长会话中的冷热更新边界
+
+| 组件 | 生效方式 | 说明与刷新动作 |
+| --- | --- | --- |
+| 入口查询数据（`agents_ask` / `agents-query.py`） | 热生效 | 每次调用实时拉取远端 `agents-local` `main` 分支，不缓存数据内容。 |
+| 路由表本地覆盖（`local/api-routes.tsv`） | 热生效 | 设了本地覆盖表时，客户端每次执行直接读磁盘文件。 |
+| 路由表远端缓存（`api-routes.json`） | TTL 内沿用缓存 | 未设本地覆盖表时默认缓存 1 小时（`CACHE_TTL=3600`）；要立即获取远端更新，删除 `$AGENTS_CACHE_DIR/api-routes.json`（默认 `~/.cache/agents/api-routes.json`）后重跑即可。 |
+| 客户端脚本（`scripts/*.py`） | 依安装方式而定 | 同目录直接改写脚本时，下次 `python3` 调用即加载最新代码；但插件按版本更新到新缓存目录时，已启动的长会话仍指向旧目录，需重载或重开会话。 |
+| MCP 进程与配置（`agents-mcp.py`、`.mcp.json` / `.codex-mcp.json` / `mcp_config.json`） | 冷生效 | MCP server 在会话初始化时常驻启动，长会话内不会重启；配置变更或脚本更新需重载插件或重开会话（其内部 `tools/call` 子进程仍每次读最新远端入口表）。 |
+| 技能正文与触发描述（`SKILL.md`、`references/*.md`） | 冷生效（按安全口径） | `SKILL.md` 的 `name`/`description` 在会话启动时注入上下文，且多版本缓存下技能路径已绑定旧版；更新后需在 Claude Code 运行 `/reload-plugins` 或在各宿主重开会话。 |
+
+### 如何核对实际加载版本与路由缓存提交号
+
+- **核对插件版本**：查看当前上下文读取到的 `SKILL.md` 所在插件根目录下的 manifest（`.claude-plugin/plugin.json`、`.codex-plugin/plugin.json` 或 `.antigravity-plugin/plugin.json`）中的 `version` 字段及插件缓存路径版本/提交目录。更新后在 Claude Code 中运行 `/reload-plugins` 或开新会话，在 Codex / 其他宿主中开新会话并核对工具列表里出现 `agents_ask`。若长会话无法直接读回内存中已注入的旧版 `description` 或常驻 MCP 版本，不要凭安装目录推断已生效，应显式说明未核实内存快照并开新会话从已知版本重新加载。
+- **核对路由表提交号与缓存**：运行 `llm-call.py` 或 `tool-call.py` 时，**stderr** 会写明本次实际使用的路由来源（例如 `agents-local@<7位sha>` 或 `route registry from cache ... (agents-local@<7位sha>, ...)`；若走本地覆盖表则不输出远端提交号）。也可直接查看 `~/.cache/agents/api-routes.json` 中的 `commit` 与 `fetched_at` 字段，或执行 `python3 <技能目录>/scripts/agents-query.py show routes` 从 stderr 核对远端最新提交。
 
 ## 仓库里有什么
 
